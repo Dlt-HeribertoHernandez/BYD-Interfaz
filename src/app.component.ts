@@ -4,6 +4,7 @@ import { CommonModule } from '@angular/common';
 import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from './services/api.service';
+import { NotificationService } from './services/notification.service';
 import { Dealer } from './models/app.types';
 
 @Component({
@@ -14,6 +15,7 @@ import { Dealer } from './models/app.types';
 })
 export class AppComponent {
   apiService = inject(ApiService);
+  notificationService = inject(NotificationService);
 
   dealers = signal<Dealer[]>([]);
 
@@ -44,5 +46,9 @@ export class AppComponent {
   onDealerChange(event: Event) {
     const select = event.target as HTMLSelectElement;
     this.apiService.selectedDealerCode.set(select.value);
+  }
+
+  removeNotification(id: string) {
+    this.notificationService.remove(id);
   }
 }

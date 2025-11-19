@@ -1,0 +1,91 @@
+
+<div class="flex flex-col h-full gap-6 animate-fade-in">
+  
+  <!-- Header & Filter Bar -->
+  <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between items-end md:items-center gap-4">
+    <div>
+      <h2 class="text-xl font-bold text-gray-800">Monitor de Integración</h2>
+      <p class="text-sm text-gray-500 mt-1">Visualización de transacciones fallidas y logs del sistema.</p>
+    </div>
+
+    <!-- Filter Toolbar -->
+    <div class="flex items-center gap-3 flex-1 justify-end w-full md:w-auto">
+      
+      <!-- Search Input -->
+      <div class="relative w-full md:w-64">
+         <i class="fas fa-search absolute left-3 top-3 text-gray-400 text-xs"></i>
+         <input type="text" [ngModel]="searchTerm()" (ngModelChange)="searchTerm.set($event)" 
+            placeholder="Buscar (Orden, VIN, Error)..."
+            class="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+      </div>
+
+      <!-- Error Toggle -->
+      <label class="flex items-center gap-2 cursor-pointer bg-gray-50 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors select-none">
+         <input type="checkbox" [ngModel]="showErrorsOnly()" (ngModelChange)="showErrorsOnly.set($event)" class="text-red-600 focus:ring-red-500 rounded border-gray-300">
+         <span class="text-xs font-bold text-gray-600">Solo Errores</span>
+      </label>
+
+      <button (click)="loadLogs()" class="p-2 bg-gray-900 text-white hover:bg-black rounded-lg shadow transition-colors" title="Recargar">
+        <i class="fas fa-sync-alt" [class.fa-spin]="isLoading()"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Grid -->
+  <div class="bg-white rounded-xl shadow-sm border border-gray-100 flex-1 overflow-hidden flex flex-col">
+    <div class="flex-1 overflow-auto">
+       <table class="w-full text-left border-collapse min-w-[1200px]">
+         <thead class="sticky top-0 bg-gray-100 z-10">
+           <tr class="text-[11px] font-bold text-gray-600 uppercase border-b border-gray-300">
+             <th class="px-4 py-3 whitespace-nowrap border-r border-gray-200">vchOrdenServicio</th>
+             <th class="px-4 py-3 whitespace-nowrap border-r border-gray-200">vchLog</th>
+             <th class="px-4 py-3 whitespace-nowrap border-r border-gray-200">dtmcreated</th>
+             <th class="px-4 py-3 border-r border-gray-200 w-64">vchMessage (Error)</th>
+             <th class="px-4 py-3 whitespace-nowrap border-r border-gray-200">VIN</th>
+             <th class="px-4 py-3 whitespace-nowrap border-r border-gray-200">labourcode</th>
+             <th class="px-4 py-3 whitespace-nowrap border-r border-gray-200">Cod_TpAut</th>
+             <th class="px-4 py-3 whitespace-nowrap">Desc_TpAut</th>
+           </tr>
+         </thead>
+         <tbody class="text-xs divide-y divide-gray-200 font-mono">
+           @for (row of filteredLogs(); track row.id) {
+             <tr class="hover:bg-gray-50 transition-colors">
+               <td class="px-4 py-2 border-r border-gray-100 font-bold text-blue-700">
+                  <!-- Highlight search match -->
+                  {{ row.vchOrdenServicio }}
+               </td>
+               <td class="px-4 py-2 border-r border-gray-100 text-gray-500">{{ row.vchLog }}</td>
+               <td class="px-4 py-2 border-r border-gray-100 whitespace-nowrap">{{ row.dtmcreated }}</td>
+               
+               <!-- Message Column -->
+               <td class="px-4 py-2 border-r border-gray-100 text-red-600 break-words max-w-xs">
+                 <div class="flex items-start gap-2">
+                   @if (row.isError) { <i class="fas fa-times-circle mt-0.5 shrink-0"></i> }
+                   <span>{{ row.vchMessage }}</span>
+                 </div>
+               </td>
+               
+               <td class="px-4 py-2 border-r border-gray-100 font-bold text-gray-800">{{ row.VIN }}</td>
+               <td class="px-4 py-2 border-r border-gray-100 text-purple-700 font-bold">{{ row.labourcode }}</td>
+               <td class="px-4 py-2 border-r border-gray-100">{{ row.Cod_TpAut }}</td>
+               <td class="px-4 py-2 text-gray-600">{{ row.Desc_TpAut }}</td>
+             </tr>
+           }
+           @if (filteredLogs().length === 0 && !isLoading()) {
+             <tr>
+               <td colspan="8" class="px-6 py-12 text-center text-gray-400">
+                  <div class="text-3xl opacity-20 mb-2"><i class="fas fa-filter"></i></div>
+                  <p>No se encontraron registros con los filtros actuales.</p>
+               </td>
+             </tr>
+           }
+         </tbody>
+       </table>
+    </div>
+    <div class="p-2 border-t border-gray-200 bg-gray-50 text-[10px] text-gray-400 text-right flex justify-between px-4">
+       <span>Total Logs: {{ logs().length }}</span>
+       <span>Mostrando: {{ filteredLogs().length }}</span>
+    </div>
+  </div>
+
+</div>

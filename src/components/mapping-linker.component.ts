@@ -1,11 +1,12 @@
 
-import { Component, signal, inject, ElementRef, ViewChild, computed } from '@angular/core';
+import { Component, signal, inject, ElementRef, ViewChild, computed, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } from '@angular/forms';
 import { StoreService } from '../services/store.service';
 import { GeminiService } from '../services/gemini.service';
 import { ApiService } from '../services/api.service';
 import { EndpointConfigService, BydModelSqlRow } from '../services/endpoint-config.service';
+import { NotificationService } from '../services/notification.service';
 import { MappingItem, ServiceOrderItem } from '../models/app.types';
 
 declare const XLSX: any;
@@ -20,75 +21,90 @@ export class MappingLinkerComponent {
   private store = inject(StoreService);
   private api = inject(ApiService);
   private gemini = inject(GeminiService);
-  public endpointConfig = inject(EndpointConfigService); // Public for template usage if needed
+  public endpointConfig = inject(EndpointConfigService);
+  private notification = inject(NotificationService);
   private fb = inject(FormBuilder);
 
   // Raw data from store
   mappings = this.store.mappings;
   stats = this.store.stats;
 
-  // Upload Preview State (Step 1: Raw Excel)
+  // --- STRUCTURED VIEW STATE ---
+  selectedSeries = signal<string | null>(null); // The active "Folder" (Vehicle Series)
+  selectedCategory = signal<string | null>(null); // The active "Tag" (Main Category)
+  searchTerm = signal<string>('');
+
+  // Computed: Grouped Series List for Sidebar
+  seriesGroups = computed(() => {
+    const groups = new Map<string, number>();
+    this.mappings().forEach(m => {
+      const s = m.vehicleSeries || 'GENERICO';
+      groups.set(s, (groups.get(s) || 0) + 1);
+    });
+    
+    return Array.from(groups.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  });
+
+  // Computed: Categories available within the selected Series
+  availableCategories = computed(() => {
+    const currentSeries = this.selectedSeries();
+    if (!currentSeries) return [];
+    
+    const cats = new Set<string>();
+    this.mappings()
+      .filter(m => (m.vehicleSeries || 'GENERICO') === currentSeries)
+      .forEach(m => {
+        if (m.mainCategory) cats.add(m.mainCategory);
+      });
+    
+    return Array.from(cats).sort();
+  });
+
+  // Computed: Final Filtered Table Data
+  filteredMappings = computed(() => {
+    let list = this.mappings();
+    const series = this.selectedSeries();
+    const cat = this.selectedCategory();
+    const term = this.searchTerm().toLowerCase();
+
+    // 1. Series Filter (Strict)
+    if (series) {
+      list = list.filter(m => (m.vehicleSeries || 'GENERICO') === series);
+    }
+
+    // 2. Category Filter
+    if (cat) {
+      list = list.filter(m => m.mainCategory === cat);
+    }
+
+    // 3. Search Term
+    if (term) {
+      list = list.filter(m => 
+        m.description?.toLowerCase().includes(term) || 
+        m.bydCode.toLowerCase().includes(term) ||
+        m.daltonCode.toLowerCase().includes(term)
+      );
+    }
+
+    return list;
+  });
+
+  // --- UPLOAD & INSERTION STATE ---
   previewMappings = signal<Omit<MappingItem, 'id' | 'status'>[]>([]);
   previewHeaders = signal<string[]>([]);
   previewData = signal<any[]>([]);
   showPreviewModal = signal(false);
-
-  // Insertion Preview State (Step 2: SQL Table)
   showInsertionModal = signal(false);
-  insertionData = signal<BydModelSqlRow[]>([]); // Typed strictly to SQL Row
-
-  // JSON Config & Animation State
-  showJsonPreview = signal(false);
-  jsonPayloadPreview = signal('');
-  isSending = signal(false);
-
-  // Filter State
-  filterModel = signal<string>('');
-  filterSeries = signal<string>('');
-  filterYear = signal<string>('');
-
-  // Computed: Derived filters options
-  uniqueModels = computed(() => {
-    const models = new Set<string>();
-    this.mappings().forEach(m => {
-      if (m.vehicleModel) models.add(m.vehicleModel);
-    });
-    return Array.from(models).sort();
-  });
-
-  uniqueSeries = computed(() => {
-    const series = new Set<string>();
-    this.mappings().forEach(m => {
-      if (m.vehicleSeries) series.add(m.vehicleSeries);
-    });
-    return Array.from(series).sort();
-  });
-
-  // Computed: Filtered List
-  filteredMappings = computed(() => {
-    let list = this.mappings();
-    const model = this.filterModel();
-    const ser = this.filterSeries();
-    const year = this.filterYear();
-
-    if (model) {
-      list = list.filter(m => m.vehicleModel === model);
-    }
-    if (ser) {
-      list = list.filter(m => m.vehicleSeries === ser);
-    }
-    if (year) {
-      list = list.filter(m => m.modelYear?.includes(year));
-    }
-    return list;
-  });
-
+  insertionData = signal<BydModelSqlRow[]>([]);
+  
   // UI State
   isUploading = signal(false);
   aiAnalysisResult = signal<string | null>(null);
   isAnalyzing = signal(false);
 
-  // --- Reverse Linking Modal State ---
+  // --- REVERSE LINKING MODAL STATE ---
   showLinkToOrderModal = signal(false);
   selectedMappingForLink = signal<MappingItem | null>(null);
   pendingOrderItems = signal<(ServiceOrderItem & { orderRef: string, customerRef: string })[]>([]);
@@ -97,20 +113,61 @@ export class MappingLinkerComponent {
   selectedOrderItemsToLink = signal<Set<string>>(new Set());
   isProcessingLink = signal(false);
 
-  // Form
+  // Form (Updated with Series Selection)
   linkForm: FormGroup = this.fb.group({
+    vehicleSeries: ['', Validators.required], // CRITICAL: Force Series Selection
     bydCode: ['', [Validators.required, Validators.minLength(3)]],
     bydType: ['Labor', Validators.required],
     daltonCode: ['', [Validators.required, Validators.minLength(3)]],
-    description: ['']
+    description: [''],
+    mainCategory: ['']
   });
 
   @ViewChild('fileInput') fileInput!: ElementRef<HTMLInputElement>;
 
+  constructor() {
+    // Auto-select first series if none selected but data exists
+    effect(() => {
+      const groups = this.seriesGroups();
+      if (groups.length > 0 && !this.selectedSeries()) {
+        this.selectedSeries.set(groups[0].name);
+      }
+    });
+  }
+
+  selectSeries(name: string) {
+    this.selectedSeries.set(name);
+    this.selectedCategory.set(null); // Reset category when changing series
+  }
+
+  toggleCategory(cat: string) {
+    if (this.selectedCategory() === cat) {
+      this.selectedCategory.set(null);
+    } else {
+      this.selectedCategory.set(cat);
+    }
+  }
+
   onSubmitManual() {
     if (this.linkForm.valid) {
-      this.store.addMapping(this.linkForm.value);
-      this.linkForm.reset({ bydType: 'Labor' });
+      const formVal = this.linkForm.value;
+      
+      // Ensure Vehicle Model matches Series for consistency unless user specifies otherwise (simplified)
+      const newItem = {
+        ...formVal,
+        vehicleModel: formVal.vehicleSeries 
+      };
+
+      this.store.addMapping(newItem);
+      
+      // Reset but keep the series selected for rapid entry
+      this.linkForm.reset({ 
+        bydType: 'Labor', 
+        vehicleSeries: formVal.vehicleSeries,
+        mainCategory: formVal.mainCategory 
+      });
+      
+      this.notification.show('Mapeo manual agregado correctamente.', 'success');
     }
   }
 
@@ -137,7 +194,6 @@ export class MappingLinkerComponent {
         const worksheet = workbook.Sheets[firstSheetName];
         const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
-        // Capture Raw Data for Preview
         if (jsonData.length > 0) {
            const firstRow = jsonData[0] as any;
            this.previewHeaders.set(Object.keys(firstRow));
@@ -147,15 +203,12 @@ export class MappingLinkerComponent {
         const newMappings: Omit<MappingItem, 'id' | 'status'>[] = [];
         
         jsonData.forEach((row: any) => {
-          // Map exact columns from user request
           const bydCode = row['Repair item code']; 
           
           if (bydCode) {
             const desc = row['Repair item name'];
-            // Dalton code is 'Claim labor hour code' or fallbacks
             const dalton = row['Claim labor hour code'] || bydCode;
             
-            // Determine type
             const catName = String(row['Main category name'] || '').toLowerCase();
             const isBattery = String(row['Battery pack repair or not']).toLowerCase() === 'yes';
 
@@ -164,21 +217,23 @@ export class MappingLinkerComponent {
               type = 'Repair';
             }
 
+            // Clean Strings
+            const clean = (s: any) => s ? String(s).trim() : '';
+
             const item: Omit<MappingItem, 'id' | 'status'> = {
-              bydCode: String(bydCode).trim(),
+              bydCode: clean(bydCode),
               bydType: type,
-              daltonCode: String(dalton).trim(),
-              description: desc ? String(desc).trim() : '',
+              daltonCode: clean(dalton),
+              description: clean(desc),
               
-              // Extended fields
-              vehicleModel: row['Vehicle code'],
-              vehicleSeries: row['Name of project Vehicle Series'],
-              mainCategory: row['Main category name'],
-              subCategory: row['Secondary classification name'],
+              vehicleModel: clean(row['Vehicle code']),
+              vehicleSeries: clean(row['Name of project Vehicle Series']),
+              mainCategory: clean(row['Main category name']),
+              subCategory: clean(row['Secondary classification name']),
               standardHours: row['Standard labor hours'] ? parseFloat(row['Standard labor hours']) : 0,
               dispatchHours: row['Dispatch labor hours'] ? parseFloat(row['Dispatch labor hours']) : 0,
               isBatteryRepair: isBattery,
-              modelYear: '2024' // Defaulting as it wasn't in sample headers but requested in filters
+              modelYear: '2025' 
             };
 
             newMappings.push(item);
@@ -187,88 +242,59 @@ export class MappingLinkerComponent {
 
         if (newMappings.length > 0) {
           this.previewMappings.set(newMappings);
-          this.showPreviewModal.set(true); // Open modal on success
+          this.showPreviewModal.set(true); 
         } else {
-          alert('No se encontraron columnas válidas (Repair item code, etc).');
+          this.notification.show('No se encontraron columnas válidas (Repair item code).', 'warning');
         }
-        
         this.isUploading.set(false);
-        
       } catch (error) {
         console.error("Error parsing Excel:", error);
         this.isUploading.set(false);
-        alert('Error al leer el archivo.');
+        this.notification.show('Error al leer el archivo Excel.', 'error');
       }
     };
-
     reader.readAsBinaryString(file);
   }
 
-  // --- STEP 2: Proceed to DB Insertion Preview ---
   proceedToInsertion() {
     const items = this.previewMappings();
-    
-    // DELEGATE to EndpointConfigService:
-    // The service knows the SQL structure ([IdModeloVehiculo], etc)
     const sqlRows = this.endpointConfig.transformToSqlStructure(items);
-
     this.insertionData.set(sqlRows);
-    this.showPreviewModal.set(false); // Close raw preview
-    this.showInsertionModal.set(true); // Open DB preview
+    this.showPreviewModal.set(false);
+    this.showInsertionModal.set(true);
   }
 
   cancelInsertion() {
     this.showInsertionModal.set(false);
-    this.showPreviewModal.set(true); // Go back to Step 1
+    this.showPreviewModal.set(true);
   }
 
-  // --- JSON PREVIEW LOGIC ---
-  generateJsonPreview() {
-    const sqlRows = this.insertionData();
-    // DELEGATE to EndpointConfigService:
-    // The service knows how to wrap the data for the endpoint
-    const payload = this.endpointConfig.buildInsertPayload(sqlRows);
-    
-    this.jsonPayloadPreview.set(JSON.stringify(payload, null, 2));
-    this.showJsonPreview.set(true);
-  }
-
-  closeJsonPreview() {
-    this.showJsonPreview.set(false);
-  }
-
-  // --- STEP 3: Final Commit ---
   confirmFinalInsertion() {
     const sqlRows = this.insertionData();
+    const items = this.previewMappings();
+    const count = items.length;
+
     if (sqlRows.length === 0) return;
 
-    // Build Payload via Config Module
     const payload = this.endpointConfig.buildInsertPayload(sqlRows);
 
-    // Start Animation
-    this.isSending.set(true);
-    this.showInsertionModal.set(false); 
+    this.resetUploadState();
+    
+    // Async Notification
+    this.notification.show(`Iniciando carga masiva de ${count} registros en segundo plano...`, 'info', 4000);
 
-    // Execute API
     this.api.executeDynamicInsert(payload).subscribe({
       next: (success) => {
-        this.isSending.set(false);
-
         if (success) {
-           const items = this.previewMappings();
            this.store.addBatchMappings(items);
-           const count = items.length;
-           this.resetUploadState();
-           alert(`Transacción Exitosa: Se procesaron ${count} registros en [dbo].[BYDModelosDMS].`);
+           this.notification.show(`Carga completada: ${count} registros procesados.`, 'success', 6000);
         } else {
-           this.showInsertionModal.set(true);
-           alert("Hubo un error al enviar los datos.");
+           this.notification.show("La carga finalizó con advertencias del servidor.", 'warning');
         }
       },
-      error: () => {
-        this.isSending.set(false);
-        this.showInsertionModal.set(true);
-        alert("Error de comunicación con el servidor.");
+      error: (err) => {
+        console.error(err);
+        this.notification.show("Error de conexión durante la carga masiva.", 'error');
       }
     });
   }
@@ -279,7 +305,7 @@ export class MappingLinkerComponent {
     this.previewHeaders.set([]);
     this.insertionData.set([]);
     this.showInsertionModal.set(false);
-    this.showJsonPreview.set(false);
+    this.showPreviewModal.set(false); // Fixed: Properly close the Preview Modal
     if (this.fileInput) {
       this.fileInput.nativeElement.value = '';
     }
@@ -291,10 +317,8 @@ export class MappingLinkerComponent {
 
   async analyzeWithGemini() {
     if (this.mappings().length === 0) return;
-    
     this.isAnalyzing.set(true);
     this.aiAnalysisResult.set(null);
-    
     try {
       const result = await this.gemini.analyzeDataIntegrity(this.mappings());
       this.aiAnalysisResult.set(result);
@@ -305,10 +329,10 @@ export class MappingLinkerComponent {
 
   deleteItem(id: string) {
     this.store.removeMapping(id);
+    this.notification.show('Registro eliminado.', 'info', 2000);
   }
 
   // --- REVERSE LINKING LOGIC ---
-
   openLinkToOrdersModal(mapping: MappingItem) {
     this.selectedMappingForLink.set(mapping);
     this.showLinkToOrderModal.set(true);
@@ -329,24 +353,20 @@ export class MappingLinkerComponent {
     const startStr = start.toISOString().split('T')[0];
 
     this.isProcessingLink.set(true); 
-
     this.api.getOrders(startStr, end).subscribe(orders => {
       const pending: (ServiceOrderItem & { orderRef: string, customerRef: string })[] = [];
-      
       orders.forEach(order => {
         if (order.status === 'Rejected' || order.status === 'Completed') return;
-
         order.items.forEach(item => {
           if (!item.isLinked) {
             pending.push({
               ...item,
               orderRef: order.orderNumber,
-              customerRef: order.customerName
+              customerRef: order.customerRef
             });
           }
         });
       });
-
       this.pendingOrderItems.set(pending);
       this.filterPendingItems();
       this.isProcessingLink.set(false);
@@ -356,12 +376,10 @@ export class MappingLinkerComponent {
   filterPendingItems() {
     const term = this.itemSearchTerm().toLowerCase();
     const all = this.pendingOrderItems();
-    
     if (!term) {
       this.filteredPendingItems.set(all);
       return;
     }
-
     this.filteredPendingItems.set(all.filter(i => 
       i.description.toLowerCase().includes(term) || 
       i.code.toLowerCase().includes(term) ||
@@ -377,7 +395,6 @@ export class MappingLinkerComponent {
   toggleOrderItemSelection(itemCode: string, event: any) {
     const checked = event.target.checked;
     const currentSet = new Set(this.selectedOrderItemsToLink());
-    
     if (checked) {
       currentSet.add(itemCode);
     } else {
@@ -389,25 +406,24 @@ export class MappingLinkerComponent {
   confirmBulkLink() {
     const mapping = this.selectedMappingForLink();
     const selectedCodes = Array.from(this.selectedOrderItemsToLink());
-    
     if (!mapping || selectedCodes.length === 0) return;
 
-    this.isProcessingLink.set(true);
+    this.isProcessingLink.set(true); 
+    this.closeLinkModal();
+    this.notification.show(`Vinculando ${selectedCodes.length} ítems en segundo plano...`, 'info');
     
     let processedCount = 0;
-    
     selectedCodes.forEach(daltonCode => {
       const itemInfo = this.pendingOrderItems().find(p => p.code === daltonCode);
-      const desc = itemInfo ? itemInfo.description : 'Vinculación Manual Masiva';
+      const desc = itemInfo ? itemInfo.description : 'Vinculación Manual';
 
       this.api.linkOrderItem(daltonCode, mapping.bydCode, mapping.bydType, desc).subscribe(() => {
         processedCount++;
         if (processedCount === selectedCodes.length) {
-          this.isProcessingLink.set(false);
-          this.closeLinkModal();
-          alert(`Se vincularon ${processedCount} ítems a la operación ${mapping.bydCode}`);
+           this.notification.show(`Vinculación masiva completada (${processedCount} items).`, 'success');
         }
       });
     });
+    this.isProcessingLink.set(false);
   }
 }

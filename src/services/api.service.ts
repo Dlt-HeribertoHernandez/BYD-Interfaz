@@ -1,11 +1,11 @@
 
-import { Injectable, signal, computed, inject } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { Injectable, signal, inject, effect } from '@angular/core';
+import { HttpClient, HttpParams, HttpHeaders } from '@angular/common/http';
 import { delay, of, Observable } from 'rxjs';
-import { catchError } from 'rxjs/operators';
-import { MappingItem, ServiceOrder, Dealer } from '../models/app.types';
+import { catchError, map } from 'rxjs/operators';
+import { MappingItem, ServiceOrder, Dealer, EndpointConfiguration } from '../models/app.types';
+import { EndpointConfigService } from './endpoint-config.service';
 
-// Helper for dynamic dates in Mock Data
 function getOffsetDate(offset: number): string {
   const d = new Date();
   d.setDate(d.getDate() + offset);
@@ -17,241 +17,176 @@ function getOffsetDate(offset: number): string {
 })
 export class ApiService {
   private http = inject(HttpClient);
+  private endpointConfig = inject(EndpointConfigService);
   
-  // Configuration
-  private readonly API_URL = 'https://api.daltonsoft-integration.com/api'; 
-
-  // Global switch for Mock Data
   useMockData = signal<boolean>(true);
-
-  // --- CONTEXT STATE (Global) ---
-  // The currently selected dealer code (replacing region/branch)
   selectedDealerCode = signal<string>(''); 
+
+  constructor() {
+    effect(() => {
+      const isMock = this.useMockData();
+      this.endpointConfig.load(isMock);
+    });
+  }
 
   toggleMockData() {
     this.useMockData.update(v => !v);
   }
 
-  // --- DEALERS MOCK DATA (Based on SQL Screenshot) ---
+  // --- MOCK DATA SETS ---
   private mockDealers: Dealer[] = [
-    { intID: 1, dealerCode: 'MEX022429', dealerName: 'BYD Carretera 57-Dalton', appId: '791565418', dealerKey: '24f5bbb9f9ab8237...', vchRepairStoreCode: 'MEX022429RS0001' },
-    { intID: 2, dealerCode: 'MEX022310', dealerName: 'BYD Lopez Mateos-Dalton', appId: '791565389', dealerKey: '8b7bac7279744628...', vchRepairStoreCode: 'MEX022310RS0001' },
-    { intID: 3, dealerCode: 'MEX022311', dealerName: 'BYD Lomas-Dalton', appId: '791565390', dealerKey: 'd3665f9b3311cbb7...', vchRepairStoreCode: 'MEX022311RS0001' },
-    { intID: 4, dealerCode: 'MEX022430', dealerName: 'BYD Mariano Escobedo-Dalton', appId: '791565391', dealerKey: '0e63261d33722d5c...', vchRepairStoreCode: 'MEX022430RS0001' },
-    { intID: 5, dealerCode: 'MEX022203', dealerName: 'BYD Country-Dalton', appId: '791565388', dealerKey: '8af5ab167a63c467...', vchRepairStoreCode: 'MEX022203RS0001' }
+    { intID: 1, dealerCode: 'MEX022429', dealerName: 'BYD Carretera 57-Dalton', appId: '791565418', dealerKey: '24f5...', vchRepairStoreCode: 'MEX022429RS0001' },
+    { intID: 2, dealerCode: 'MEX022310', dealerName: 'BYD Lopez Mateos-Dalton', appId: '791565389', dealerKey: '8b7b...', vchRepairStoreCode: 'MEX022310RS0001' },
+    { intID: 3, dealerCode: 'MEX022311', dealerName: 'BYD Lomas-Dalton', appId: '791565390', dealerKey: 'd366...', vchRepairStoreCode: 'MEX022311RS0001' },
   ];
 
-  // --- MAPPINGS MOCK DATA ---
   private mockMappings: MappingItem[] = [
-    { id: '1', bydCode: 'L-99201', bydType: 'Labor', daltonCode: '19897094-00', status: 'Linked', description: 'Reemplazo Batería HV' },
-    { id: '2', bydCode: 'R-10203', bydType: 'Repair', daltonCode: '10500005-00', status: 'Linked', description: 'Ajuste Suspensión Delantera' }
+    { id: '1', bydCode: 'WSA3HAC02101GH00', bydType: 'Labor', daltonCode: '19897094-00', status: 'Linked', description: 'Replace EGR gasket 2', vehicleSeries: 'SONG PLUS DMI', vehicleModel: 'SONG PLUS DMI' },
+    { id: '2', bydCode: 'WSA3HRF00501GH00', bydType: 'Repair', daltonCode: '10500005-00', status: 'Linked', description: 'Replace ACC bracket', vehicleSeries: 'SONG PLUS DMI', vehicleModel: 'SONG PLUS DMI' },
+    { id: '3', bydCode: 'SHARK_LAB_01', bydType: 'Labor', daltonCode: 'S_LAB_01', status: 'Pending', description: 'Shark Battery Replace', vehicleSeries: 'SHARK', vehicleModel: 'SHARK' }
   ];
 
-  // --- ORDERS MOCK DATA ---
   private mockOrders: ServiceOrder[] = [
     {
-      id: '101',
-      branchCode: 'MEX022429', // Carretera 57
-      docType: 'OS',
-      orderNumber: 'P0002901', 
-      date: getOffsetDate(0), 
-      customerCode: '7119',
-      customerName: 'JUAN PEREZ (Demo)',
-      vin: 'LGXC74C42S0065615',
-      totalAmount: 4977.87, 
-      status: 'Pending',
-      rawStatusChar: 'R',
+      id: '101', branchCode: 'MEX022429', docType: 'OS', orderNumber: 'XCL00435', date: getOffsetDate(0), 
+      customerCode: '9003', customerName: 'DE LA MORA GUTIERREZ ANDRES', vin: 'LGXC74C48S0147557', 
+      modelCodeRaw: 'SOPL25BY', modelDescRaw: 'SONG PLUS 2025 BC DM-I AT DELAN BLACK', year: '2025',
+      totalAmount: 1795.22, status: 'Pending',
       items: [
-        { code: '19897094-00', description: 'BATERIA HV MODULE', quantity: 3.7, unitPrice: 400.00, total: 1480.00, isLinked: true, linkedBydCode: 'L-99201' },
-        { code: 'M0006', description: 'MANO DE OBRA GRAL', quantity: 1.6, unitPrice: 700.00, total: 1120.00, isLinked: false },
-        { code: '10500005-00', description: 'TORNILLO ESTABILIZADOR', quantity: 1.0, unitPrice: 38.82, total: 38.82, isLinked: true, linkedBydCode: 'R-10203' }
-      ],
-      logs: [
-        { timestamp: `${getOffsetDate(0)}T09:00:00`, message: 'Documento creado (Stat: R) en Sucursal MEX022429', status: 'Pending' }
-      ]
-    },
-    {
-      id: '102',
-      branchCode: 'MEX022429', // Carretera 57
-      docType: 'OS',
-      orderNumber: 'P0002905',
-      date: getOffsetDate(0),
-      customerCode: '8821',
-      customerName: 'TRANSPORTE LOGISTICO SA',
-      vin: 'BYDHANEV999888',
-      totalAmount: 12500.50,
-      status: 'Transmitted',
-      items: [
-        { code: '12633693-00', description: 'SENSOR ABS TRASERO', quantity: 2, unitPrice: 299.24, total: 598.48, isLinked: false }
-      ],
-      logs: [
-        { timestamp: `${getOffsetDate(0)}T10:00:00`, message: 'Documento Creado', status: 'Pending' },
-        { timestamp: `${getOffsetDate(0)}T10:05:00`, message: 'Enviado a API BYD Exitosamente', status: 'Transmitted' }
-      ]
-    },
-    {
-      id: '103',
-      branchCode: 'MEX022310', // Lopez Mateos
-      docType: 'OS',
-      orderNumber: 'G005102',
-      date: getOffsetDate(-1),
-      customerCode: '5501',
-      customerName: 'MARIA GONZALEZ',
-      vin: 'BYDYUAN000777',
-      totalAmount: 850.00,
-      status: 'Rejected',
-      items: [
-         { code: 'ERR-999', description: 'ITEM DESCONOCIDO', quantity: 1, total: 0, isLinked: false }
-      ],
-      logs: [
-        { timestamp: `${getOffsetDate(-1)}T14:00:00`, message: 'Error: VIN no encontrado en base de datos BYD', status: 'Rejected' }
-      ]
-    },
-    {
-      id: '104',
-      branchCode: 'MEX022203', // Country
-      docType: 'OS',
-      orderNumber: 'M900100',
-      date: getOffsetDate(0),
-      customerCode: '3301',
-      customerName: 'NORTE MOTORS',
-      vin: 'BYDSEAL000111',
-      totalAmount: 5200.00,
-      status: 'In Process',
-      items: [],
-      logs: []
+          { code: '15407199-00', description: 'IPC MEMORY CARD_EVA007KG-IC-M1-BYD', quantity: 2, total: 847.60, isLinked: false },
+          { code: 'MO006', description: 'CONFIGURACION DE TARJETAS NFC PARA CARGADOR', quantity: 1, total: 700.00, isLinked: false }
+      ], 
+      logs: [{ timestamp: new Date().toISOString(), message: 'Error: vehicle series not match', status: 'Error' }]
     }
   ];
 
-  // --- CATALOG METHODS ---
+  private getHttpOptions(config: EndpointConfiguration) {
+    let headers = new HttpHeaders();
+    if (config.headers) {
+      try {
+        const parsed = JSON.parse(config.headers);
+        for (const key in parsed) {
+          headers = headers.set(key, parsed[key]);
+        }
+      } catch (e) {
+        console.warn(`Invalid headers JSON for config: ${config.name}`);
+      }
+    }
+    if (config.apiKey) {
+        if (!headers.has('Authorization') && !headers.has('x-api-key') && !headers.has('X-API-Key')) {
+             headers = headers.set('x-api-key', config.apiKey);
+        }
+    }
+    return { headers };
+  }
+
+  // --- API METHODS ---
 
   getDealers(): Observable<Dealer[]> {
     if(this.useMockData()) return of(this.mockDealers);
-    
-    return this.http.get<Dealer[]>(`${this.API_URL}/dealers`).pipe(
+    const config = this.endpointConfig.getConfig('Dealers');
+    if (!config || !config.url) return of([]);
+    const options = this.getHttpOptions(config);
+
+    return this.http.get<Partial<Dealer>[]>(config.url, options).pipe(
+      map(response => {
+        if (!Array.isArray(response)) return [];
+        return response.map((d, i) => ({
+          intID: d.intID || (i + 1),
+          dealerCode: d.dealerCode || 'UNKNOWN',
+          dealerName: d.dealerName || 'Unknown Dealer',
+          appId: d.appId || '',
+          dealerKey: d.dealerKey || '',
+          vchRepairStoreCode: d.vchRepairStoreCode || ''
+        } as Dealer));
+      }),
       catchError(err => {
-        console.warn('API Error (Dealers) - Returning empty list:', err);
+        console.error('API Error (Dealers):', err);
         return of([]);
       })
     );
   }
 
-  // --- ENDPOINTS ---
-
-  // GET Mappings
   getMappings(): Observable<MappingItem[]> {
-    if (this.useMockData()) {
-      return of([...this.mockMappings]).pipe(delay(500));
-    }
-    return this.http.get<MappingItem[]>(`${this.API_URL}/mappings`).pipe(
-      catchError(err => {
-        console.warn('API Error (Mappings) - Returning empty list:', err);
-        return of([]);
-      })
+    if (this.useMockData()) return of([...this.mockMappings]).pipe(delay(500));
+    const config = this.endpointConfig.getConfig('Mappings') || this.endpointConfig.getConfig('Carga');
+    if (!config || !config.url) return of([]);
+    return this.http.get<MappingItem[]>(config.url, this.getHttpOptions(config)).pipe(
+      catchError(() => of([]))
     );
   }
 
-  // POST Mapping
   createMapping(item: MappingItem): Observable<MappingItem> {
     if (this.useMockData()) {
       this.mockMappings.unshift(item);
       return of(item).pipe(delay(300));
     }
-    return this.http.post<MappingItem>(`${this.API_URL}/mappings`, item).pipe(
-      catchError(err => {
-         console.error('API Error (Create Mapping):', err);
-         throw err; 
-      })
-    );
+    const config = this.endpointConfig.getConfig('Mappings') || this.endpointConfig.getConfig('Carga');
+    if (!config || !config.url) throw new Error("No Mappings URL configured");
+    return this.http.post<MappingItem>(config.url, item, this.getHttpOptions(config));
   }
 
-  // DELETE Mapping
   deleteMapping(id: string): Observable<boolean> {
     if (this.useMockData()) {
       this.mockMappings = this.mockMappings.filter(m => m.id !== id);
       return of(true).pipe(delay(300));
     }
-    return this.http.delete<boolean>(`${this.API_URL}/mappings/${id}`).pipe(
-       catchError(err => {
-         console.error('API Error (Delete Mapping):', err);
-         return of(false); 
-      })
+    const config = this.endpointConfig.getConfig('Mappings') || this.endpointConfig.getConfig('Carga');
+    if (!config || !config.url) return of(false);
+    return this.http.delete<boolean>(`${config.url}/${id}`, this.getHttpOptions(config)).pipe(
+       catchError(() => of(false))
     );
   }
 
-  // GET Orders (with filters)
   getOrders(startDate: string, endDate: string, dealerCode?: string): Observable<ServiceOrder[]> {
-    // Use provided branch or fallback to global state
     const targetDealer = dealerCode || this.selectedDealerCode();
 
     if (this.useMockData()) {
-      // Filter by Date AND Dealer
-      const filtered = this.mockOrders.filter(o => 
-        o.date >= startDate && 
-        o.date <= endDate && 
-        o.branchCode === targetDealer // Match on dealerCode
-      );
-      
-      return of(filtered).pipe(delay(600));
+      return of(this.mockOrders.filter(o => o.branchCode === targetDealer)).pipe(delay(600));
     }
     
-    // Real API call with filters
+    const config = this.endpointConfig.getConfig('Obtener Órdenes');
+    if (!config || !config.url) return of([]);
+
     let params = new HttpParams()
       .set('startDate', startDate)
       .set('endDate', endDate)
       .set('dealerCode', targetDealer);
 
-    return this.http.get<ServiceOrder[]>(`${this.API_URL}/orders`, { params }).pipe(
+    const options = { ...this.getHttpOptions(config), params };
+
+    return this.http.get<ServiceOrder[]>(config.url, options).pipe(
       catchError(err => {
-        console.warn('API Error (Orders) - Returning empty list:', err);
+        console.error('API Error (Orders):', err);
         return of([]);
       })
     );
   }
 
-  // POST Link Order Item
   linkOrderItem(daltonCode: string, bydCode: string, bydType: 'Labor' | 'Repair', description: string): Observable<boolean> {
-    const payload = {
-        daltonCode,
-        bydCode,
-        bydType,
-        description,
-        dealerCode: this.selectedDealerCode() // Context
-    };
-
     if(this.useMockData()) {
-        const newMapping: MappingItem = {
-            id: crypto.randomUUID(),
-            daltonCode,
-            bydCode,
-            bydType,
-            description,
-            status: 'Linked'
-        };
-        return this.createMapping(newMapping).pipe(delay(100)) as any;
+        return of(true).pipe(delay(500));
     }
+    const config = this.endpointConfig.getConfig('Vincular');
+    if (!config || !config.url) return of(false);
 
-    return this.http.post<boolean>(`${this.API_URL}/mappings/link-from-order`, payload).pipe(
-      catchError(err => {
-        console.error('API Error (Link Order):', err);
-        return of(false);
-      })
+    const payload = {
+        daltonCode, bydCode, bydType, description,
+        dealerCode: this.selectedDealerCode()
+    };
+    return this.http.post<boolean>(config.url, payload, this.getHttpOptions(config)).pipe(
+      catchError(() => of(false))
     );
   }
 
-  // GENERIC DYNAMIC INSERT
   executeDynamicInsert(payload: any): Observable<boolean> {
     if (this.useMockData()) {
-      console.log("MOCK API: Executing Dynamic Insert with JSON:", JSON.stringify(payload, null, 2));
-      // Simulate network latency for animation
-      return of(true).pipe(delay(2500));
+      return of(true).pipe(delay(2000));
     }
-
-    return this.http.post<boolean>(`${this.API_URL}/dynamic-insert`, payload).pipe(
-      catchError(err => {
-        console.error('API Error (Dynamic Insert):', err);
-        return of(false);
-      })
+    const config = this.endpointConfig.getConfig('Carga') || this.endpointConfig.getConfig('Insertar');
+    if (!config || !config.url) return of(false);
+    return this.http.post<boolean>(config.url, payload, this.getHttpOptions(config)).pipe(
+      catchError(() => of(false))
     );
   }
 }
