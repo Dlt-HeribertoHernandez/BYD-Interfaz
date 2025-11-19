@@ -1,0 +1,189 @@
+
+<div class="flex flex-col h-full gap-6 animate-fade-in">
+  
+  <!-- Header Section -->
+  <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center">
+    <div>
+      <h2 class="text-xl font-bold text-gray-800">Configuración de Endpoints</h2>
+      <p class="text-sm text-gray-500 mt-1">Administra las estructuras JSON, autenticación y destinos de los servicios.</p>
+    </div>
+    <button (click)="startNewConfig()" 
+      class="px-4 py-2 bg-gray-900 hover:bg-black text-white rounded-lg font-medium shadow-lg transition-all flex items-center gap-2 text-sm">
+      <i class="fas fa-plus"></i> Nueva Configuración
+    </button>
+  </div>
+
+  <!-- Content: Two Columns -->
+  <div class="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
+    
+    <!-- Left: Config List -->
+    <div class="lg:w-1/3 bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
+      <div class="p-4 border-b border-gray-100 bg-gray-50">
+        <h3 class="font-semibold text-gray-700 text-sm uppercase tracking-wide">Servicios Disponibles</h3>
+      </div>
+      <div class="overflow-y-auto flex-1 p-2 space-y-2">
+        @for (config of configs(); track config.id) {
+          <div (click)="selectConfig(config)"
+               class="p-4 rounded-lg border cursor-pointer transition-all group relative"
+               [class]="selectedConfigId() === config.id ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-500' : 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-sm'">
+            
+            <div class="flex justify-between items-start mb-1">
+              <span class="font-bold text-gray-800 text-sm">{{ config.name }}</span>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider"
+                 [ngClass]="{
+                   'bg-green-100 text-green-700': config.method === 'GET',
+                   'bg-blue-100 text-blue-700': config.method === 'POST',
+                   'bg-orange-100 text-orange-700': config.method === 'PUT',
+                   'bg-red-100 text-red-700': config.method === 'DELETE'
+                 }">
+                 {{ config.method }}
+              </span>
+            </div>
+            
+            <p class="text-xs text-gray-500 line-clamp-2 mb-2">{{ config.description }}</p>
+            
+            <div class="flex items-center gap-2 text-[10px] text-gray-400 font-mono truncate">
+              <i class="fas fa-globe"></i> {{ config.url }}
+            </div>
+
+            <button (click)="deleteConfig(config.id, $event)" 
+              class="absolute top-3 right-3 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+        }
+      </div>
+    </div>
+
+    <!-- Right: Editor Panel -->
+    <div class="lg:w-2/3 bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col overflow-hidden relative">
+      @if (isEditing()) {
+        <form [formGroup]="configForm" (ngSubmit)="saveConfig()" class="flex flex-col h-full">
+          
+          <!-- Form Header -->
+          <div class="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+            <h3 class="font-semibold text-gray-800 flex items-center gap-2">
+              <i class="fas fa-edit text-blue-600"></i> 
+              {{ selectedConfigId() ? 'Editar Servicio' : 'Nuevo Servicio' }}
+            </h3>
+            <div class="flex items-center gap-3">
+              <label class="flex items-center cursor-pointer relative">
+                <input type="checkbox" formControlName="isActive" class="sr-only peer">
+                <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                <span class="ml-2 text-xs font-medium text-gray-600">Activo</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Form Content -->
+          <div class="flex-1 overflow-y-auto p-6 space-y-5">
+            
+            <!-- Basic Info -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Nombre del Servicio</label>
+                <input type="text" formControlName="name" placeholder="Ej: Insertar Modelos"
+                  class="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Tabla Destino (SQL)</label>
+                <input type="text" formControlName="targetTable" placeholder="Ej: [dbo].[Tabla]"
+                  class="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-gray-600">
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Descripción</label>
+              <input type="text" formControlName="description" 
+                class="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+            </div>
+
+            <!-- Endpoint & Method -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-5">
+              <div class="md:col-span-1">
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Método</label>
+                <select formControlName="method" class="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-bold text-gray-700 outline-none">
+                  <option value="GET">GET</option>
+                  <option value="POST">POST</option>
+                  <option value="PUT">PUT</option>
+                  <option value="DELETE">DELETE</option>
+                </select>
+              </div>
+              <div class="md:col-span-3">
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Endpoint URL</label>
+                <input type="text" formControlName="url" placeholder="https://api..."
+                  class="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-mono text-blue-600 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+              </div>
+            </div>
+
+            <!-- Auth & Headers Section -->
+            <div class="bg-gray-50 p-4 rounded-lg border border-gray-100 space-y-4">
+              <h4 class="text-xs font-bold text-gray-700 flex items-center gap-2">
+                <i class="fas fa-lock"></i> Autenticación y Cabeceras
+              </h4>
+              
+              <div>
+                <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">API Key / Token</label>
+                <div class="relative">
+                   <input type="text" formControlName="apiKey" placeholder="Bearer ..."
+                     class="w-full p-2.5 bg-white border border-gray-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none transition-all pr-8">
+                   <i class="fas fa-key absolute right-3 top-3 text-gray-300 text-xs"></i>
+                </div>
+              </div>
+
+              <div>
+                 <div class="flex justify-between items-end mb-1">
+                   <label class="block text-[10px] font-bold text-gray-500 uppercase">Custom Headers (JSON)</label>
+                   <button type="button" (click)="formatJson('headers')" class="text-[10px] text-blue-600 hover:underline font-medium">
+                     <i class="fas fa-align-left"></i> Formatear
+                   </button>
+                 </div>
+                 <textarea formControlName="headers" rows="3"
+                   class="w-full p-2.5 bg-white border border-gray-200 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none resize-none"></textarea>
+              </div>
+            </div>
+
+            <!-- JSON Payload Editor -->
+            <div class="flex flex-col h-64">
+               <div class="flex justify-between items-end mb-1">
+                 <label class="block text-xs font-bold text-gray-500 uppercase">Estructura Body (JSON)</label>
+                 <button type="button" (click)="formatJson('jsonStructure')" class="text-xs text-blue-600 hover:underline font-medium">
+                   <i class="fas fa-align-left"></i> Formatear
+                 </button>
+               </div>
+               <div class="flex-1 relative rounded-lg overflow-hidden border border-gray-300 shadow-inner focus-within:ring-2 focus-within:ring-blue-500 transition-all">
+                 <textarea formControlName="jsonStructure" 
+                   class="w-full h-full bg-[#1e1e1e] text-green-400 font-mono text-xs p-4 resize-none outline-none leading-relaxed"></textarea>
+               </div>
+               <p class="text-[10px] text-gray-400 mt-1">
+                 Variables disponibles: <span class="font-mono bg-gray-100 px-1 rounded">{{'{{ARRAY_DATA}}'}}</span>, <span class="font-mono bg-gray-100 px-1 rounded">{{'{{TIMESTAMP}}'}}</span>
+               </p>
+            </div>
+
+          </div>
+
+          <!-- Footer Actions -->
+          <div class="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
+            <button type="button" (click)="cancelEdit()" 
+              class="px-5 py-2.5 bg-white text-gray-600 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition-colors">
+              Cancelar
+            </button>
+            <button type="submit" [disabled]="isFormInvalid"
+              class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all">
+              <i class="fas fa-save mr-1"></i> Guardar Cambios
+            </button>
+          </div>
+        </form>
+      } @else {
+        <div class="flex flex-col items-center justify-center h-full text-gray-300">
+          <div class="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+             <i class="fas fa-cogs text-4xl text-gray-300"></i>
+          </div>
+          <h3 class="text-lg font-medium text-gray-400">Selecciona un Servicio</h3>
+          <p class="text-sm max-w-xs text-center mt-2">Haz clic en un item de la izquierda para editarlo o crea uno nuevo.</p>
+        </div>
+      }
+    </div>
+
+  </div>
+</div>

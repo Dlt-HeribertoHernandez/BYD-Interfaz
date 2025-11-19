@@ -1,0 +1,5 @@
+{
+  "name": "BYD-Dalton Integrator",
+  "description": "Portal de vinculación de códigos de labor/reparación BYD con órdenes de servicio Daltonsoft, con soporte de carga masiva y análisis IA.",
+  "requestFramePermissions": []
+}
