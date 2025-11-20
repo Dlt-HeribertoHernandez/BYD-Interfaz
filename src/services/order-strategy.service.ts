@@ -10,8 +10,8 @@ export class OrderStrategyService {
   // Definition of supported Order Types and their Rules
   private definitions = signal<OrderTypeConfig[]>([
     {
-      code: 'OS', // The Dalton DMS code for Repair Orders
-      label: 'Repair Order (RO)',
+      code: 'OR', // Updated: Other Repair (formerly OS)
+      label: 'Other Repair',
       icon: 'fa-tools',
       colorClass: 'blue',
       rules: {

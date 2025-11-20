@@ -1,49 +1,51 @@
 
 import { Injectable, signal, computed } from '@angular/core';
-import { BusinessRule } from '../models/app.types';
+import { BusinessRule, ClassificationRule } from '../models/app.types';
 
 /**
  * Servicio de Reglas de Negocio.
  * Centraliza la lógica de transformación y filtrado de datos.
- * Permite cambiar comportamientos (ej. cómo se calculan códigos) en tiempo de ejecución.
+ * AHORA TAMBIÉN: Gestiona la inteligencia de clasificación automática.
  */
 @Injectable({
   providedIn: 'root'
 })
 export class BusinessRulesService {
 
-  // Estado inicial de reglas. 
-  // "default-mirror" es la regla estándar donde el código no sufre cambios.
+  // --- REGLAS DE ADMISIÓN (Filtro de entrada) ---
   private rulesSignal = signal<BusinessRule[]>([
     {
       id: 'default-mirror',
-      name: 'Estándar (Espejo)',
-      description: 'El código Dalton será idéntico al código BYD.',
+      name: 'Perfil Estándar',
+      description: 'Detecta códigos MO006 y Servicios Generales',
       isActive: true,
       strategy: 'MIRROR',
-      placeholderCodes: ['MO006', 'MO-GEN'], // Códigos comodín por defecto
-      defaultCategory: 'Labor',
-      defaultHours: 0
-    },
-    {
-      id: 'fixed-mo006',
-      name: 'Campaña MO006',
-      description: 'Todos los ítems cargados se asignarán al código MO006.',
-      isActive: false,
-      strategy: 'FIXED',
-      fixedValue: 'MO006',
-      placeholderCodes: ['MO006'],
+      placeholderCodes: ['MO006', 'MO-GEN', 'ZLAB', 'SERVICIO'],
       defaultCategory: 'Labor',
       defaultHours: 0
     }
   ]);
 
+  // --- REGLAS DE CLASIFICACIÓN (Diccionario Inteligente) ---
+  // Estas reglas permiten etiquetar items automáticamente sin intervención de IA externa
+  private classificationRulesSignal = signal<ClassificationRule[]>([
+    { id: '1', keyword: 'ACEITE', category: 'Mantenimiento', icon: 'fa-oil-can', priority: 'Normal', colorClass: 'blue' },
+    { id: '2', keyword: 'BALATAS', category: 'Frenos', icon: 'fa-circle-stop', priority: 'High', colorClass: 'red' },
+    { id: '3', keyword: 'ALINEACION', category: 'Suspensión', icon: 'fa-arrows-alt-h', priority: 'Normal', colorClass: 'orange' },
+    { id: '4', keyword: 'PLUMILLAS', category: 'Carrocería', icon: 'fa-wiper', priority: 'Low', colorClass: 'gray' },
+    { id: '5', keyword: 'DIAGNOSTICO', category: 'Diagnóstico', icon: 'fa-stethoscope', priority: 'High', colorClass: 'purple' },
+    { id: '6', keyword: 'BATERIA', category: 'Eléctrico', icon: 'fa-car-battery', priority: 'High', colorClass: 'yellow' },
+  ]);
+
   readonly rules = this.rulesSignal.asReadonly();
+  readonly classificationRules = this.classificationRulesSignal.asReadonly();
 
   // Regla activa calculada (siempre debe haber una)
   readonly activeRule = computed(() => {
     return this.rulesSignal().find(r => r.isActive) || this.rulesSignal()[0];
   });
+
+  // --- GESTIÓN DE PERFILES DE ADMISIÓN ---
 
   setActiveRule(id: string) {
     this.rulesSignal.update(list => 
@@ -67,10 +69,9 @@ export class BusinessRulesService {
   }
 
   deleteRule(id: string) {
-    if (this.rulesSignal().length <= 1) return; // Prevenir borrar la última regla
+    if (this.rulesSignal().length <= 1) return; 
     this.rulesSignal.update(list => list.filter(r => r.id !== id));
     
-    // Asegurar que queda una activa
     if (!this.rulesSignal().some(r => r.isActive)) {
        this.rulesSignal.update(list => {
          if (list.length > 0) list[0].isActive = true;
@@ -79,23 +80,31 @@ export class BusinessRulesService {
     }
   }
 
+  // --- GESTIÓN DE REGLAS DE CLASIFICACIÓN ---
+
+  addClassificationRule(rule: Omit<ClassificationRule, 'id'>) {
+    const newRule = { ...rule, id: crypto.randomUUID() };
+    this.classificationRulesSignal.update(list => [newRule, ...list]);
+  }
+
+  deleteClassificationRule(id: string) {
+    this.classificationRulesSignal.update(list => list.filter(r => r.id !== id));
+  }
+
+  // --- LÓGICA DE NEGOCIO (Evaluación) ---
+
   /**
    * Verifica si un código específico (proveniente de una orden) es considerado
    * un "Placeholder" o Comodín (ej. MO006).
-   * Estos códigos REQUIEREN vinculación manual obligatoria.
    */
   isPlaceholderCode(code: string): boolean {
     const active = this.activeRule();
     if (!active || !active.placeholderCodes) return false;
-    return active.placeholderCodes.includes(code);
+    return active.placeholderCodes.some(p => p.trim().toUpperCase() === code.trim().toUpperCase());
   }
 
   /**
    * Determina si un ítem de la orden debe mostrarse en la interfaz principal.
-   * Lógica: 
-   * - Si la regla activa tiene `placeholderCodes` definidos, SOLO muestra esos ítems.
-   * - Esto filtra refacciones, aceites y otros conceptos que no son Mano de Obra (Labor).
-   * - Si no hay códigos definidos, muestra todo.
    */
   isItemRelevant(code: string): boolean {
     const active = this.activeRule();
@@ -104,21 +113,29 @@ export class BusinessRulesService {
     if (!active.placeholderCodes || active.placeholderCodes.length === 0) {
       return true;
     }
-
-    // Comparación estricta (trimming incluido)
-    return active.placeholderCodes.some(p => p.trim() === code.trim());
+    return active.placeholderCodes.some(p => p.trim().toUpperCase() === code.trim().toUpperCase());
   }
 
   /**
-   * Calcula el código interno (Dalton) basado en el código de fábrica (BYD)
-   * y la estrategia de la regla activa.
+   * Analiza una descripción y devuelve la mejor clasificación posible
+   * basada en las reglas definidas por el usuario.
    */
-  calculateDaltonCode(bydCode: string, rule: BusinessRule): string {
-    switch(rule.strategy) {
-      case 'FIXED': return rule.fixedValue || 'MO006';
-      case 'PREFIX': return (rule.prefixValue || '') + bydCode;
-      case 'MIRROR': 
-      default: return bydCode;
+  classifyItem(description: string): { category: string, icon: string, priority: string, colorClass: string } | null {
+    const descUpper = description.toUpperCase();
+    const rules = this.classificationRulesSignal();
+
+    // Buscar la primera coincidencia
+    const match = rules.find(r => descUpper.includes(r.keyword.toUpperCase()));
+
+    if (match) {
+      return {
+        category: match.category,
+        icon: match.icon,
+        priority: match.priority,
+        colorClass: match.colorClass
+      };
     }
+
+    return null; // Sin clasificación detectada
   }
 }

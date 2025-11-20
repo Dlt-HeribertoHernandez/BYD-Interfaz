@@ -1,158 +1,222 @@
 
 <div class="flex flex-col h-full gap-6 animate-fade-in">
+  
   <!-- Header -->
-  <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex justify-between items-center">
+  <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-colors">
     <div>
-      <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-         <i class="fas fa-brain text-purple-600"></i> Reglas de Negocio
+      <h2 class="text-xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
+         <i class="fas fa-brain text-purple-600 dark:text-purple-400"></i> Inteligencia de Negocio
       </h2>
-      <p class="text-sm text-gray-500 mt-1">Configura cómo se transforman los códigos al importar desde Excel.</p>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Define qué entra al sistema y cómo se clasifica automáticamente.</p>
     </div>
-    <button (click)="startNewRule()" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium shadow-lg transition-all text-sm">
-       <i class="fas fa-plus"></i> Nueva Regla
-    </button>
+    
+    <!-- Tab Switcher -->
+    <div class="flex bg-gray-100 dark:bg-gray-700 p-1 rounded-lg">
+       <button (click)="activeTab.set('admission')" 
+          class="px-4 py-2 rounded-md text-sm font-bold transition-all flex items-center gap-2"
+          [class]="activeTab() === 'admission' ? 'bg-white dark:bg-gray-600 text-purple-600 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'">
+          <i class="fas fa-filter"></i> Filtros de Admisión
+       </button>
+       <button (click)="activeTab.set('classification')" 
+          class="px-4 py-2 rounded-md text-sm font-bold transition-all flex items-center gap-2"
+          [class]="activeTab() === 'classification' ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'">
+          <i class="fas fa-tags"></i> Diccionario de Conceptos
+       </button>
+    </div>
   </div>
 
   <div class="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
-     <!-- Left: Rules List -->
-     <div class="lg:w-1/2 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
-        <div class="p-4 border-b border-gray-200 bg-gray-50 text-xs font-bold text-gray-500 uppercase">
-           Reglas Disponibles
-        </div>
-        <div class="flex-1 overflow-y-auto p-3 space-y-3">
-           @for (rule of rules(); track rule.id) {
-              <div (click)="editRule(rule)" 
-                 class="p-4 rounded-xl border cursor-pointer transition-all relative group"
-                 [class]="rule.isActive ? 'bg-purple-50 border-purple-200 ring-1 ring-purple-200' : 'bg-white border-gray-200 hover:border-purple-200'">
-                 
-                 <div class="flex justify-between items-start">
+     
+     <!-- LEFT COLUMN: CONFIGURATION (Changes based on Tab) -->
+     <div class="lg:w-7/12 flex flex-col gap-4 overflow-y-auto pr-1">
+        
+        <!-- TAB 1: ADMISSION PROFILES -->
+        @if (activeTab() === 'admission') {
+           <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-300 mb-2">
+              <i class="fas fa-info-circle mr-1"></i> Los "Filtros de Admisión" deciden qué códigos del DMS se consideran Mano de Obra. Todo lo que no esté aquí será ignorado.
+           </div>
+
+           @if(isEditingProfile()) {
+              <!-- Profile Editor -->
+              <div class="bg-white dark:bg-gray-800 rounded-xl border border-purple-200 dark:border-purple-800 p-5 shadow-sm animate-fade-in">
+                 <h3 class="font-bold text-gray-800 dark:text-white mb-4">Nuevo Perfil de Filtro</h3>
+                 <form [formGroup]="profileForm" (ngSubmit)="saveProfile()" class="space-y-4">
                     <div>
-                       <h3 class="font-bold text-gray-800">{{ rule.name }}</h3>
-                       <p class="text-xs text-gray-500 mt-1">{{ rule.description }}</p>
+                       <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Nombre</label>
+                       <input type="text" formControlName="name" class="w-full p-2 border rounded text-sm dark:bg-gray-700 dark:text-white dark:border-gray-600">
                     </div>
-                    @if(rule.isActive) {
-                       <span class="bg-purple-100 text-purple-700 text-[10px] font-bold px-2 py-1 rounded-full border border-purple-200">ACTIVA</span>
-                    } @else {
-                       <button (click)="setActive(rule.id, $event)" class="bg-gray-100 text-gray-500 hover:bg-purple-600 hover:text-white text-[10px] font-bold px-2 py-1 rounded-full transition-colors">
-                          Activar
-                       </button>
-                    }
-                 </div>
-
-                 <div class="mt-3 flex flex-wrap gap-2 text-xs">
-                    <div class="bg-gray-50 px-2 py-1 rounded border border-gray-200 font-mono text-gray-600">
-                       Estrategia: <span class="font-bold text-purple-600">{{ rule.strategy }}</span>
-                    </div>
-                    @if(rule.placeholderCodes && rule.placeholderCodes.length > 0) {
-                       <div class="bg-yellow-50 px-2 py-1 rounded border border-yellow-200 text-yellow-600 font-mono flex items-center gap-1">
-                          <i class="fas fa-tag"></i>
-                          {{ rule.placeholderCodes.join(', ') }}
+                    <div>
+                       <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Códigos Permitidos (CSV)</label>
+                       <textarea formControlName="placeholderCodes" rows="2" class="w-full p-2 border rounded text-sm font-mono dark:bg-gray-700 dark:text-white dark:border-gray-600"></textarea>
+                       <div class="flex flex-wrap gap-1 mt-2">
+                          @for(tag of parsedTags; track tag) {
+                             <span class="text-[10px] bg-gray-100 dark:bg-gray-700 px-1 rounded border">{{ tag }}</span>
+                          }
                        </div>
-                    }
-                 </div>
+                    </div>
+                    <div class="flex gap-2 justify-end">
+                       <button type="button" (click)="cancelProfileEdit()" class="px-3 py-1.5 text-sm border rounded hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700">Cancelar</button>
+                       <button type="submit" class="px-3 py-1.5 text-sm bg-purple-600 text-white rounded font-bold">Guardar</button>
+                    </div>
+                 </form>
+              </div>
+           } @else {
+              <!-- Profiles List -->
+              <button (click)="startNewProfile()" class="w-full py-3 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl text-gray-400 hover:border-purple-400 hover:text-purple-500 transition-all font-bold text-sm mb-2">
+                 <i class="fas fa-plus mr-1"></i> Crear Nuevo Perfil
+              </button>
 
-                 <button (click)="deleteRule(rule.id, $event)" class="absolute top-3 right-3 text-gray-400 hover:text-red-500 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <i class="fas fa-trash"></i>
+              @for (rule of rules(); track rule.id) {
+                <div class="bg-white dark:bg-gray-800 rounded-xl border p-4 relative group"
+                   [class]="rule.isActive ? 'border-purple-500 ring-1 ring-purple-500' : 'border-gray-200 dark:border-gray-700'">
+                   <div class="flex justify-between items-start">
+                      <div>
+                         <h4 class="font-bold text-gray-800 dark:text-gray-200">{{ rule.name }}</h4>
+                         <p class="text-xs text-gray-500 mb-2">{{ rule.description }}</p>
+                         <div class="flex flex-wrap gap-1">
+                            @for(code of rule.placeholderCodes; track code) {
+                               <span class="text-[10px] font-mono bg-gray-100 dark:bg-gray-700 px-1.5 rounded border dark:border-gray-600 dark:text-gray-300">{{ code }}</span>
+                            }
+                         </div>
+                      </div>
+                      @if(rule.isActive) {
+                         <span class="text-purple-600 text-xs font-bold bg-purple-50 dark:bg-purple-900/30 px-2 py-1 rounded">ACTIVO</span>
+                      } @else {
+                         <button (click)="activateProfile(rule.id)" class="text-xs text-gray-400 hover:text-purple-600 font-bold underline">Activar</button>
+                      }
+                   </div>
+                   @if(!rule.isActive) {
+                     <button (click)="deleteProfile(rule.id)" class="absolute top-2 right-2 text-gray-300 hover:text-red-500 p-1"><i class="fas fa-trash"></i></button>
+                   }
+                </div>
+              }
+           }
+        }
+
+        <!-- TAB 2: CLASSIFICATION DICTIONARY -->
+        @if (activeTab() === 'classification') {
+           <div class="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-100 dark:border-green-800 text-xs text-green-800 dark:text-green-300 mb-2">
+              <i class="fas fa-magic mr-1"></i> El "Diccionario" asigna categorías y colores automáticamente si la descripción contiene la palabra clave.
+           </div>
+
+           <!-- Dictionary Entry Form -->
+           <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 shadow-sm">
+              <h4 class="text-xs font-bold text-gray-500 uppercase mb-3">Agregar Palabra Clave</h4>
+              <div class="flex flex-wrap gap-3 items-end">
+                 <div class="flex-1 min-w-[150px]">
+                    <label class="block text-[10px] font-bold text-gray-400 mb-1">SI CONTIENE:</label>
+                    <input type="text" [ngModel]="newClassRuleKeyword()" (ngModelChange)="newClassRuleKeyword.set($event)" placeholder="Ej. ACEITE" 
+                       class="w-full p-2 border rounded text-sm font-mono uppercase dark:bg-gray-700 dark:text-white dark:border-gray-600">
+                 </div>
+                 <div class="flex-1 min-w-[150px]">
+                     <label class="block text-[10px] font-bold text-gray-400 mb-1">CLASIFICAR COMO:</label>
+                     <input type="text" [ngModel]="newClassRuleCategory()" (ngModelChange)="newClassRuleCategory.set($event)" placeholder="Ej. Mantenimiento" 
+                        class="w-full p-2 border rounded text-sm dark:bg-gray-700 dark:text-white dark:border-gray-600">
+                 </div>
+                 <div class="w-28">
+                     <label class="block text-[10px] font-bold text-gray-400 mb-1">ICONO / COLOR:</label>
+                     <div class="flex gap-1">
+                        <select [ngModel]="newClassRuleIcon()" (ngModelChange)="newClassRuleIcon.set($event)" class="w-1/2 p-2 border rounded text-xs dark:bg-gray-700 dark:text-white dark:border-gray-600">
+                           @for(icon of iconsList; track icon) { <option [value]="icon">{{ icon }}</option> }
+                        </select>
+                        <select [ngModel]="newClassRuleColor()" (ngModelChange)="newClassRuleColor.set($event)" class="w-1/2 p-2 border rounded text-xs dark:bg-gray-700 dark:text-white dark:border-gray-600">
+                           @for(color of colorsList; track color) { <option [value]="color">{{ color }}</option> }
+                        </select>
+                     </div>
+                 </div>
+                 <button (click)="addClassificationRule()" class="px-4 py-2 bg-green-600 text-white rounded-lg font-bold shadow hover:bg-green-700 text-sm h-[38px]">
+                    <i class="fas fa-plus"></i>
                  </button>
               </div>
-           }
-        </div>
-     </div>
-
-     <!-- Right: Editor -->
-     <div class="lg:w-1/2 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
-        @if (isEditing()) {
-           <div class="p-4 border-b border-gray-200 bg-gray-50 text-xs font-bold text-gray-500 uppercase flex justify-between items-center">
-              <span>{{ selectedRuleId() ? 'Editar Regla' : 'Nueva Regla' }}</span>
-              <button (click)="cancelEdit()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
            </div>
-           
-           <form [formGroup]="ruleForm" (ngSubmit)="saveRule()" class="flex-1 overflow-y-auto p-6 space-y-6">
-              
-              <!-- Basics -->
-              <div>
-                 <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Nombre de la Regla</label>
-                 <input type="text" formControlName="name" class="w-full p-3 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-800 outline-none focus:ring-2 focus:ring-purple-500 transition-all placeholder-gray-400" placeholder="Ej: Campaña MO006">
-              </div>
-              <div>
-                 <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Descripción</label>
-                 <input type="text" formControlName="description" class="w-full p-3 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-800 outline-none focus:ring-2 focus:ring-purple-500 transition-all">
-              </div>
 
-              <!-- Strategy Section -->
-              <div class="bg-purple-50 border border-purple-100 rounded-xl p-5 space-y-4">
-                 <h4 class="text-sm font-bold text-purple-800 flex items-center gap-2">
-                    <i class="fas fa-cogs"></i> Lógica de Carga Masiva (Excel)
-                 </h4>
-
-                 <div class="space-y-2">
-                    <label class="flex items-center gap-3 bg-white p-3 rounded border border-purple-100 cursor-pointer">
-                       <input type="radio" formControlName="strategy" value="MIRROR" class="text-purple-600 focus:ring-purple-500 bg-gray-100 border-gray-300">
-                       <div class="text-sm">
-                          <span class="font-bold text-gray-800">Espejo (Mirror)</span>
-                          <p class="text-xs text-gray-500">Dalton Code = BYD Code</p>
-                       </div>
-                    </label>
-
-                    <label class="flex items-center gap-3 bg-white p-3 rounded border border-purple-100 cursor-pointer">
-                       <input type="radio" formControlName="strategy" value="FIXED" class="text-purple-600 focus:ring-purple-500 bg-gray-100 border-gray-300">
-                       <div class="text-sm flex-1">
-                          <span class="font-bold text-gray-800">Valor Fijo (Fixed)</span>
-                          <p class="text-xs text-gray-500">Dalton Code = Valor Constante</p>
-                       </div>
-                    </label>
-                    
-                    <!-- Conditional Input for Fixed -->
-                    @if (ruleForm.get('strategy')?.value === 'FIXED') {
-                       <div class="ml-8 animate-fade-in">
-                          <label class="text-[10px] font-bold text-purple-600 uppercase">Código Fijo (Ej: MO006)</label>
-                          <input type="text" formControlName="fixedValue" class="w-full p-2 mt-1 bg-white border border-purple-300 rounded text-sm font-bold text-gray-800">
-                       </div>
-                    }
-
-                    <label class="flex items-center gap-3 bg-white p-3 rounded border border-purple-100 cursor-pointer">
-                       <input type="radio" formControlName="strategy" value="PREFIX" class="text-purple-600 focus:ring-purple-500 bg-gray-100 border-gray-300">
-                       <div class="text-sm flex-1">
-                          <span class="font-bold text-gray-800">Prefijo</span>
-                          <p class="text-xs text-gray-500">Dalton Code = Prefijo + BYD Code</p>
-                       </div>
-                    </label>
-                    
-                    <!-- Conditional Input for Prefix -->
-                     @if (ruleForm.get('strategy')?.value === 'PREFIX') {
-                       <div class="ml-8 animate-fade-in">
-                          <label class="text-[10px] font-bold text-purple-600 uppercase">Prefijo (Ej: BYD-)</label>
-                          <input type="text" formControlName="prefixValue" class="w-full p-2 mt-1 bg-white border border-purple-300 rounded text-sm font-bold text-gray-800">
-                       </div>
-                    }
+           <!-- Dictionary List -->
+           <div class="space-y-2">
+              @for(rule of classificationRules(); track rule.id) {
+                 <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3 flex items-center justify-between group hover:shadow-sm">
+                    <div class="flex items-center gap-4">
+                       <span class="font-mono font-bold text-gray-800 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-sm">{{ rule.keyword }}</span>
+                       <i class="fas fa-arrow-right text-gray-300 text-xs"></i>
+                       <span class="flex items-center gap-2 px-2 py-1 rounded text-xs font-bold border"
+                          [ngClass]="'bg-' + rule.colorClass + '-50 text-' + rule.colorClass + '-700 border-' + rule.colorClass + '-200'">
+                          <i class="fas" [class]="rule.icon"></i> {{ rule.category }}
+                       </span>
+                    </div>
+                    <button (click)="deleteClassRule(rule.id)" class="text-gray-300 hover:text-red-500 p-1"><i class="fas fa-trash"></i></button>
                  </div>
-              </div>
-
-              <!-- Wildcard Codes Section -->
-              <div class="bg-yellow-50 border border-yellow-100 rounded-xl p-5 space-y-2">
-                 <h4 class="text-sm font-bold text-yellow-700 flex items-center gap-2">
-                    <i class="fas fa-filter"></i> Definición de Ítems de Labor (Filtro)
-                 </h4>
-                 <p class="text-xs text-yellow-600">Define los códigos (como <strong>MO006</strong>) que identifican la Mano de Obra. <br> <strong>Nota:</strong> Al visualizar una orden, el sistema <u>ocultará</u> cualquier ítem que NO esté en esta lista (ej. Refacciones).</p>
-                 
-                 <div class="mt-2">
-                    <label class="block text-[10px] font-bold text-yellow-600 uppercase mb-1">Lista de Códigos (Separados por coma)</label>
-                    <input type="text" formControlName="placeholderCodes" placeholder="MO006, GENERICO, SERVICIO"
-                       class="w-full p-3 bg-white border border-yellow-300 rounded-lg text-sm font-bold text-gray-800 outline-none focus:ring-2 focus:ring-yellow-500 placeholder-gray-400">
-                 </div>
-              </div>
-
-              <div class="pt-4 border-t border-gray-200 flex justify-end gap-3">
-                 <button type="button" (click)="cancelEdit()" class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg font-medium hover:bg-gray-200">Cancelar</button>
-                 <button type="submit" [disabled]="ruleForm.invalid" class="px-6 py-2 bg-purple-600 text-white rounded-lg font-bold shadow hover:bg-purple-700 disabled:opacity-50">Guardar Regla</button>
-              </div>
-           </form>
-        } @else {
-           <div class="flex-1 flex flex-col items-center justify-center text-gray-400">
-              <i class="fas fa-arrow-left text-2xl mb-2"></i>
-              <p>Selecciona una regla para editar</p>
+              }
            </div>
         }
      </div>
+
+     <!-- RIGHT COLUMN: ADVANCED SIMULATOR -->
+     <div class="lg:w-5/12 flex flex-col h-full">
+        <div class="bg-gray-900 text-white p-4 rounded-t-xl flex items-center gap-2 shadow-lg">
+           <i class="fas fa-vial text-yellow-400"></i>
+           <span class="font-bold text-sm uppercase tracking-wide">Simulador de Diagnóstico</span>
+        </div>
+        <div class="bg-white dark:bg-gray-800 border-x border-b border-gray-200 dark:border-gray-700 rounded-b-xl p-6 shadow-sm flex-1 flex flex-col gap-6">
+           
+           <div class="space-y-4">
+              <div>
+                 <label class="text-[10px] font-bold text-gray-400 uppercase">1. Código DMS (Input)</label>
+                 <input type="text" [ngModel]="simulatorCode()" (ngModelChange)="simulatorCode.set($event)" 
+                    class="w-full p-3 bg-gray-100 dark:bg-gray-900 border-transparent focus:bg-white dark:focus:bg-black focus:border-blue-500 border-2 rounded-lg font-mono font-bold text-lg outline-none transition-all dark:text-white">
+              </div>
+              <div>
+                 <label class="text-[10px] font-bold text-gray-400 uppercase">2. Descripción (Input)</label>
+                 <textarea [ngModel]="simulatorDesc()" (ngModelChange)="simulatorDesc.set($event)" rows="2"
+                    class="w-full p-3 bg-gray-100 dark:bg-gray-900 border-transparent focus:bg-white dark:focus:bg-black focus:border-blue-500 border-2 rounded-lg text-sm outline-none transition-all dark:text-white"></textarea>
+              </div>
+           </div>
+
+           <div class="h-px bg-gray-200 dark:bg-gray-700 w-full"></div>
+
+           <!-- Results -->
+           <div class="flex-1 space-y-4">
+              
+              <!-- Result 1: Admission -->
+              <div class="flex gap-3 items-start">
+                 <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-1 transition-colors"
+                    [class]="simulationResult().isAdmitted ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'">
+                    <i class="fas" [class]="simulationResult().isAdmitted ? 'fa-check' : 'fa-ban'"></i>
+                 </div>
+                 <div>
+                    <h5 class="font-bold text-sm text-gray-700 dark:text-gray-200">Filtro de Admisión</h5>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">{{ simulationResult().admittedMessage }}</p>
+                 </div>
+              </div>
+
+              <!-- Result 2: Classification -->
+              @if(simulationResult().isAdmitted) {
+                 <div class="flex gap-3 items-start animate-slide-up">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 mt-1">
+                       <i class="fas fa-tags"></i>
+                    </div>
+                    <div>
+                       <h5 class="font-bold text-sm text-gray-700 dark:text-gray-200">Categorización Automática</h5>
+                       
+                       @if(simulationResult().classification; as cls) {
+                          <div class="mt-2 flex items-center gap-2">
+                             <span class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-bold border shadow-sm"
+                                [ngClass]="'bg-' + cls.colorClass + '-50 text-' + cls.colorClass + '-700 border-' + cls.colorClass + '-200'">
+                                <i class="fas" [class]="cls.icon"></i> {{ cls.category }}
+                             </span>
+                             <span class="text-xs text-gray-400">(Prioridad: {{ cls.priority }})</span>
+                          </div>
+                          <p class="text-[10px] text-green-600 mt-1"><i class="fas fa-check-double"></i> Detectado por regla de diccionario.</p>
+                       } @else {
+                          <div class="mt-2 p-2 bg-gray-100 dark:bg-gray-700/50 rounded text-xs text-gray-500 dark:text-gray-400 italic">
+                             Sin coincidencias en el diccionario. Se usará "General".
+                          </div>
+                       }
+                    </div>
+                 </div>
+              }
+
+           </div>
+        </div>
+     </div>
+
   </div>
 </div>

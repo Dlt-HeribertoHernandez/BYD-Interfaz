@@ -80,6 +80,19 @@ export interface BusinessRule {
 }
 
 /**
+ * NUEVO: Regla de Clasificación Automática.
+ * Permite asignar metadatos (Categoría, Icono, Prioridad) basados en palabras clave.
+ */
+export interface ClassificationRule {
+  id: string;
+  keyword: string;        // Palabra a buscar (ej. "BALATAS", "ACEITE")
+  category: string;       // Categoría asignada (ej. "FRENOS")
+  icon: string;           // Icono FontAwesome (ej. "fa-circle-stop")
+  priority: 'High' | 'Normal' | 'Low'; 
+  colorClass: string;     // Color visual para la UI
+}
+
+/**
  * Item individual dentro de una Orden de Servicio.
  */
 export interface ServiceOrderItem {
@@ -93,6 +106,10 @@ export interface ServiceOrderItem {
   isLinked: boolean;
   linkedBydCode?: string;
   linkedBydDescription?: string; // Descripción oficial de planta guardada al vincular
+  
+  // Metadatos calculados en tiempo real por reglas
+  detectedCategory?: string;
+  detectedIcon?: string;
 }
 
 /**
@@ -146,6 +163,26 @@ export interface IntegrationLog {
   Cod_TpAut: string; 
   Desc_TpAut: string; 
   isError: boolean;         // Flag calculado basado en vchMessage
+}
+
+/**
+ * Payload para transmisión a planta.
+ */
+export interface TransmissionPayload {
+  header: {
+    dealerCode: string;
+    roNumber: string;
+    vin: string;
+    repairDate: string;
+    modelCode: string;
+  };
+  laborList: {
+    lineId: number;
+    operationCode: string; // BYD Code
+    internalCode: string;  // Dalton Code
+    description: string;
+    hours: number;
+  }[];
 }
 
 /**

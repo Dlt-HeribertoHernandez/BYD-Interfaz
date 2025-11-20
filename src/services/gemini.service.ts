@@ -20,41 +20,66 @@ export class GeminiService {
   }
 
   /**
-   * Analiza una muestra de datos cargados para detectar problemas de calidad.
-   * Usa el modelo 'gemini-2.5-flash' para velocidad y bajo costo.
+   * NUEVO: Enriquecimiento Masivo.
+   * Toma un lote de items crudos y devuelve versiones mejoradas.
+   * 1. Estandariza descripciones a Español comercial.
+   * 2. Asigna categorías automáticas.
    */
-  async analyzeDataIntegrity(data: MappingItem[]): Promise<string> {
-    if (!process.env.API_KEY) return "API Key no configurada.";
+  async enrichCatalogBatch(items: MappingItem[]): Promise<{ id: string, cleanDescription: string, category: string, tags: string[] }[]> {
+    if (!process.env.API_KEY) return [];
 
-    // Tomamos solo una muestra pequeña para no exceder límites de tokens
-    const sample = data.slice(0, 20).map(item => 
-      `BYD: ${item.bydCode} (${item.bydType}) <-> Dalton: ${item.daltonCode}`
-    ).join('\n');
+    // Limitamos el contexto para evitar errores de payload grande (Top 20 items a la vez recomendado)
+    const batch = items.slice(0, 25).map(item => ({
+      id: item.id,
+      code: item.bydCode,
+      desc: item.description
+    }));
 
     const prompt = `
-      Actúa como un auditor de calidad de datos para una planta automotriz.
-      Analiza la siguiente muestra de vinculaciones de códigos entre el sistema BYD y Daltonsoft.
+      Actúa como un Gerente de Servicio de Taller Automotriz experto.
+      Tu tarea es LIMPIAR y CATEGORIZAR un catálogo de operaciones de taller.
       
-      Datos (Muestra):
-      ${sample}
-      
-      Por favor, proporciona un breve resumen en texto plano (máximo 3 oraciones) sobre:
-      1. La consistencia del formato de los códigos.
-      2. Si detectas alguna anomalía obvia (ej. códigos vacíos o formatos mezclados).
-      3. Una recomendación rápida.
-      
-      Responde en Español, tono profesional y conciso.
+      Input Data (JSON):
+      ${JSON.stringify(batch)}
+
+      Reglas de Transformación:
+      1. 'cleanDescription': Reescribe la descripción técnica (que puede estar en inglés técnico, abreviada o mezclada) a un ESPAÑOL claro y comercial, listo para imprimirse en la factura del cliente. Ej: "RPL BRK PAD" -> "Reemplazo de Balatas Delanteras".
+      2. 'category': Clasifica el ítem en una de estas categorías: [Mantenimiento, Motor, Suspensión, Frenos, Eléctrico, Carrocería, Transmisión, Accesorios, General].
+      3. 'tags': Array de 3 palabras clave para búsqueda rápida.
+
+      Output esperado: JSON Array estricto con la estructura solicitada.
     `;
+
+    const schema = {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          id: { type: Type.STRING },
+          cleanDescription: { type: Type.STRING },
+          category: { type: Type.STRING, enum: ["Mantenimiento", "Motor", "Suspensión", "Frenos", "Eléctrico", "Carrocería", "Transmisión", "Accesorios", "General"] },
+          tags: { type: Type.ARRAY, items: { type: Type.STRING } }
+        },
+        required: ["id", "cleanDescription", "category", "tags"]
+      }
+    };
 
     try {
       const response = await this.ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: schema
+        }
       });
-      return response.text;
+
+      const jsonText = response.text;
+      if (!jsonText) return [];
+      return JSON.parse(jsonText);
     } catch (error) {
-      console.error('Gemini Error:', error);
-      return "No se pudo completar el análisis de IA en este momento.";
+      console.error('Gemini Enrichment Error:', error);
+      return [];
     }
   }
 
@@ -118,7 +143,7 @@ export class GeminiService {
 
   /**
    * Sugiere mapeos potenciales utilizando "Few-Shot Learning".
-   * Se le pasa un historial de mapeos correctos para que la IA aprenda el patrón.
+   * Se mejora la lógica para manejar descripciones genéricas de forma robusta.
    */
   async suggestMapping(
     daltonDescription: string, 
@@ -147,13 +172,21 @@ export class GeminiService {
         ${contextSample}
       ]
       
-      Instrucciones:
-      1. Analiza la 'Base de Conocimiento' para encontrar patrones similares.
-      2. Si encuentras algo similar, sugiere ese código o uno derivado.
-      3. Si no hay similitud, usa tu conocimiento general de códigos BYD.
-      4. Genera exactamente 3 sugerencias.
+      INSTRUCCIONES CRÍTICAS DE RAZONAMIENTO:
+      1. **Búsqueda de Patrones**: Analiza la 'Base de Conocimiento'. Si hay algo idéntico, úsalo como base.
       
-      Retorna JSON estricto.
+      2. **Manejo de Ambigüedad (IMPORTANTE)**: 
+         - Si la descripción es VAGA o GENÉRICA (ej. "Revisión", "Ruido", "Servicio", "Diagnóstico", "Check engine") y no hay contexto suficiente:
+         - NO inventes un código de parte específica (no adivines frenos si solo dice "Ruido").
+         - Sugiere un código genérico administrativo o de diagnóstico (ej. "DIAG_GEN", "MO-GEN", "GENERAL_INSPECTION").
+         - Marca la confianza (confidence) como "Low".
+         - En el campo 'reasoning', explica claramente: "Descripción insuficiente para determinar código exacto. Se sugiere código genérico."
+
+      3. **Preferencia de Tipo**: Si no menciona explícitamente "Cambio" o "Reemplazo", asume que es 'Labor' (Mano de obra), no 'Repair'.
+      
+      4. **Formato**: Genera hasta 3 sugerencias.
+      
+      Retorna JSON estricto bajo el schema proporcionado.
     `;
 
     const schema = {
@@ -177,7 +210,7 @@ export class GeminiService {
         config: {
           responseMimeType: 'application/json',
           responseSchema: schema,
-          temperature: 0.4 
+          temperature: 0.3 // Bajamos temperatura para ser más conservadores y analíticos
         }
       });
 

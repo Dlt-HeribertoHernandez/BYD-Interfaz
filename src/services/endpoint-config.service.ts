@@ -46,21 +46,34 @@ export class EndpointConfigService {
     },
     {
       id: '2',
-      name: 'Vincular Orden Servicio', // Key for lookup
-      description: 'Envía la vinculación de un item de orden a un código BYD.',
-      url: 'https://api.daltonsoft-integration.com/api/mappings/link-from-order',
+      name: 'Transmitir Orden', // Key for lookup
+      description: 'Envía la orden procesada a la API de Planta.',
+      url: 'https://api.byd-cloud.com/v1/service/ro-claim',
       method: 'POST',
       targetTable: 'N/A',
-      apiKey: '',
-      headers: '{\n  "Content-Type": "application/json"\n}',
+      apiKey: 'byd_live_key_xxxx',
+      headers: '{\n  "Content-Type": "application/json",\n  "Authorization": "Bearer {{TOKEN}}"\n}',
       isActive: true,
       lastModified: new Date().toISOString(),
       jsonStructure: JSON.stringify({
-        daltonCode: "{{STRING}}",
-        bydCode: "{{STRING}}",
-        bydType: "Labor|Repair",
-        dealerCode: "{{CONTEXT_DEALER}}"
+        header: {
+          dealerCode: "{{CONTEXT_DEALER}}",
+          vin: "{{STRING}}",
+          roNumber: "{{STRING}}"
+        },
+        items: ["{{ARRAY_DATA}}"]
       }, null, 2)
+    },
+    {
+      id: '7',
+      name: 'Registrar Log', // Key for lookup
+      description: 'Guarda el resultado de la transacción en LogIntegracion.',
+      url: 'https://api.daltonsoft-integration.com/api/logs/create',
+      method: 'POST',
+      targetTable: '[dbo].[LogIntegracion]',
+      isActive: true,
+      lastModified: new Date().toISOString(),
+      jsonStructure: '// POST Log Data'
     },
     {
       id: '3',

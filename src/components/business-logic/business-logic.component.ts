@@ -1,14 +1,10 @@
 
-import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, inject, signal, computed, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } from '@angular/forms';
 import { BusinessRulesService } from '../../services/business-rules.service';
-import { BusinessRule } from '../../models/app.types';
+import { BusinessRule, ClassificationRule } from '../../models/app.types';
 
-/**
- * Componente de administración de Reglas de Negocio.
- * CRUD para definir comportamientos de carga masiva y filtrado de órdenes.
- */
 @Component({
   selector: 'app-business-logic',
   standalone: true,
@@ -20,87 +16,124 @@ export class BusinessLogicComponent {
   rulesService = inject(BusinessRulesService);
   private fb = inject(FormBuilder);
 
+  // Signals de Datos
   rules = this.rulesService.rules;
+  classificationRules = this.rulesService.classificationRules;
   
-  isEditing = signal(false);
-  selectedRuleId = signal<string | null>(null);
+  // Estado de Vista
+  activeTab = signal<'admission' | 'classification'>('admission');
+  isEditingProfile = signal(false);
+  
+  // Estado del Simulador
+  simulatorCode = signal<string>('MO006');
+  simulatorDesc = signal<string>('REVISION DE FRENOS DELANTEROS');
 
-  ruleForm: FormGroup = this.fb.group({
+  // Formulario Perfil de Admisión
+  profileForm: FormGroup = this.fb.group({
     name: ['', Validators.required],
     description: [''],
-    strategy: ['MIRROR', Validators.required],
-    fixedValue: ['MO006'],
-    prefixValue: ['BYD-'],
-    placeholderCodes: [''], // UI: String separado por comas. Model: Array de strings.
-    defaultCategory: ['Labor'],
-    defaultHours: [0]
+    placeholderCodes: ['', Validators.required], 
+    isActive: [false]
   });
 
-  startNewRule() {
-    this.selectedRuleId.set(null);
-    this.isEditing.set(true);
-    this.ruleForm.reset({
-      name: '',
+  // Formulario Nueva Regla de Clasificación
+  newClassRuleKeyword = signal('');
+  newClassRuleCategory = signal('');
+  newClassRuleIcon = signal('fa-tag');
+  newClassRuleColor = signal('blue');
+
+  // --- COMPUTED: Simulador ---
+
+  simulationResult = computed(() => {
+    const code = this.simulatorCode().trim().toUpperCase();
+    const desc = this.simulatorDesc().trim();
+    
+    // 1. Chequeo de Admisión
+    const isAdmitted = this.rulesService.isItemRelevant(code);
+    
+    // 2. Chequeo de Clasificación
+    const classification = this.rulesService.classifyItem(desc);
+
+    return {
+      isAdmitted,
+      admittedStatus: isAdmitted ? 'ACEPTADO' : 'IGNORADO',
+      admittedMessage: isAdmitted 
+        ? 'El código está en la lista blanca. Pasará al flujo de trabajo.' 
+        : 'Código no reconocido como Mano de Obra. Se ocultará.',
+      
+      classification
+    };
+  });
+
+  // --- LOGICA PESTAÑA: ADMISIÓN ---
+
+  get parsedTags(): string[] {
+    const raw = this.profileForm.get('placeholderCodes')?.value || '';
+    return raw.split(',').map((s: string) => s.trim().toUpperCase()).filter((s: string) => s.length > 0);
+  }
+
+  startNewProfile() {
+    this.isEditingProfile.set(true);
+    this.profileForm.reset({
+      name: 'Nuevo Perfil',
       description: '',
-      strategy: 'MIRROR',
-      fixedValue: 'MO006',
-      prefixValue: 'BYD-',
-      placeholderCodes: 'MO006, GENERICO',
-      defaultCategory: 'Labor',
-      defaultHours: 0
+      placeholderCodes: 'MO006, SERVICIO',
+      isActive: false
     });
   }
 
-  editRule(rule: BusinessRule) {
-    this.selectedRuleId.set(rule.id);
-    this.isEditing.set(true);
-    
-    // Convertir Array a String para el input
-    const formVal = {
-      ...rule,
-      placeholderCodes: rule.placeholderCodes ? rule.placeholderCodes.join(', ') : ''
-    };
-    
-    this.ruleForm.patchValue(formVal);
-  }
+  saveProfile() {
+    if (this.profileForm.invalid) return;
+    const val = this.profileForm.value;
+    const placeholders = (val.placeholderCodes as string).split(',').map(s => s.trim()).filter(s => s.length > 0);
 
-  saveRule() {
-    if (this.ruleForm.invalid) return;
-    const val = this.ruleForm.value;
-
-    // Parsear String a Array
-    const placeholders = (val.placeholderCodes as string)
-      .split(',')
-      .map(s => s.trim())
-      .filter(s => s.length > 0);
-
-    const cleanRule = {
-      ...val,
-      placeholderCodes: placeholders
+    const cleanRule: any = {
+      name: val.name,
+      description: val.description,
+      placeholderCodes: placeholders,
+      isActive: val.isActive,
+      strategy: 'MIRROR', defaultCategory: 'Labor', defaultHours: 0
     };
 
-    if (this.selectedRuleId()) {
-      this.rulesService.updateRule(this.selectedRuleId()!, cleanRule);
-    } else {
-      this.rulesService.addRule(cleanRule);
-    }
-    this.cancelEdit();
+    this.rulesService.addRule(cleanRule); // Simplificado: Siempre crea nuevo en esta demo
+    this.isEditingProfile.set(false);
   }
 
-  deleteRule(id: string, event: Event) {
-    event.stopPropagation();
-    if (confirm('¿Eliminar esta regla de negocio?')) {
-      this.rulesService.deleteRule(id);
-    }
+  cancelProfileEdit() {
+    this.isEditingProfile.set(false);
   }
 
-  cancelEdit() {
-    this.isEditing.set(false);
-    this.selectedRuleId.set(null);
+  deleteProfile(id: string) {
+     if(confirm('¿Eliminar perfil?')) this.rulesService.deleteRule(id);
   }
 
-  setActive(id: string, event: Event) {
-    event.stopPropagation();
-    this.rulesService.setActiveRule(id);
+  activateProfile(id: string) {
+     this.rulesService.setActiveRule(id);
   }
+
+  // --- LOGICA PESTAÑA: CLASIFICACIÓN ---
+
+  addClassificationRule() {
+    if (!this.newClassRuleKeyword() || !this.newClassRuleCategory()) return;
+
+    this.rulesService.addClassificationRule({
+      keyword: this.newClassRuleKeyword(),
+      category: this.newClassRuleCategory(),
+      icon: this.newClassRuleIcon(),
+      colorClass: this.newClassRuleColor(),
+      priority: 'Normal'
+    });
+
+    // Reset fields
+    this.newClassRuleKeyword.set('');
+    this.newClassRuleCategory.set('');
+  }
+
+  deleteClassRule(id: string) {
+    this.rulesService.deleteClassificationRule(id);
+  }
+
+  // Helpers para UI
+  iconsList = ['fa-tag', 'fa-oil-can', 'fa-circle-stop', 'fa-car-battery', 'fa-wrench', 'fa-stethoscope', 'fa-wifi', 'fa-bolt', 'fa-shield-alt', 'fa-broom'];
+  colorsList = ['blue', 'green', 'red', 'orange', 'purple', 'yellow', 'gray'];
 }

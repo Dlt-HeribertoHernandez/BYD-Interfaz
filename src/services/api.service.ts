@@ -3,7 +3,7 @@ import { Injectable, signal, inject, effect } from '@angular/core';
 import { HttpClient, HttpParams, HttpHeaders } from '@angular/common/http';
 import { delay, of, Observable } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
-import { MappingItem, ServiceOrder, Dealer, EndpointConfiguration, IntegrationLog } from '../models/app.types';
+import { MappingItem, ServiceOrder, Dealer, EndpointConfiguration, IntegrationLog, TransmissionPayload } from '../models/app.types';
 import { EndpointConfigService } from './endpoint-config.service';
 
 /**
@@ -44,15 +44,30 @@ export class ApiService {
   ];
 
   private mockMappings: MappingItem[] = [
-    { id: '1', bydCode: 'WSA3HAC02101GH00', bydType: 'Labor', daltonCode: '19897094-00', status: 'Linked', description: 'Replace EGR gasket 2', vehicleSeries: 'SONG PLUS DMI', vehicleModel: 'SONG PLUS DMI' },
-    { id: '2', bydCode: 'WSA3HRF00501GH00', bydType: 'Repair', daltonCode: '10500005-00', status: 'Linked', description: 'Replace ACC bracket', vehicleSeries: 'SONG PLUS DMI', vehicleModel: 'SONG PLUS DMI' },
-    { id: '3', bydCode: 'SHARK_LAB_01', bydType: 'Labor', daltonCode: 'S_LAB_01', status: 'Pending', description: 'Shark Battery Replace', vehicleSeries: 'SHARK', vehicleModel: 'SHARK' }
+    // SONG PLUS DM-I
+    { id: '1', bydCode: 'WSA3HAC02101GH00', bydType: 'Labor', daltonCode: '19897094-00', status: 'Linked', description: 'Mantenimiento 10,000 KM Song Plus', vehicleSeries: 'SONG PLUS DMI', vehicleModel: 'SONG PLUS DMI', mainCategory: 'Mantenimiento', standardHours: 1.2 },
+    { id: '2', bydCode: 'WSA3HRF00501GH00', bydType: 'Repair', daltonCode: '10500005-00', status: 'Linked', description: 'Reemplazo Balatas Delanteras', vehicleSeries: 'SONG PLUS DMI', vehicleModel: 'SONG PLUS DMI', mainCategory: 'Frenos', standardHours: 0.8 },
+    { id: '3', bydCode: 'WSA3-DIAG-001', bydType: 'Labor', daltonCode: 'DIAG-01', status: 'Linked', description: 'Diagnóstico Sistema Híbrido', vehicleSeries: 'SONG PLUS DMI', vehicleModel: 'SONG PLUS DMI', mainCategory: 'Motor', standardHours: 2.0 },
+    
+    // DOLPHIN / DOLPHIN MINI
+    { id: '4', bydCode: 'DOL-MAINT-20K', bydType: 'Labor', daltonCode: 'M-20K', status: 'Linked', description: 'Servicio 20,000 KM Dolphin', vehicleSeries: 'DOLPHIN', vehicleModel: 'DOLPHIN', mainCategory: 'Mantenimiento', standardHours: 1.5 },
+    { id: '5', bydCode: 'DOL-MINI-WIPER', bydType: 'Labor', daltonCode: 'WIP-01', status: 'Linked', description: 'Cambio Plumillas Limpiaparabrisas', vehicleSeries: 'DOLPHIN MINI', vehicleModel: 'DOLPHIN MINI', mainCategory: 'Carrocería', standardHours: 0.3 },
+    { id: '6', bydCode: 'DOL-ELEC-CHK', bydType: 'Labor', daltonCode: 'E-CHK', status: 'Linked', description: 'Revisión Sistema Alto Voltaje', vehicleSeries: 'DOLPHIN', vehicleModel: 'DOLPHIN', mainCategory: 'Eléctrico', standardHours: 1.0 },
+
+    // SEAL
+    { id: '7', bydCode: 'SEAL-ALIGN-01', bydType: 'Labor', daltonCode: 'ALI-01', status: 'Linked', description: 'Alineación y Balanceo 4 Ruedas', vehicleSeries: 'SEAL', vehicleModel: 'SEAL', mainCategory: 'Suspensión', standardHours: 1.8 },
+    { id: '8', bydCode: 'SEAL-UPD-SOFT', bydType: 'Labor', daltonCode: 'SW-UPD', status: 'Linked', description: 'Actualización Software OTA Manual', vehicleSeries: 'SEAL', vehicleModel: 'SEAL', mainCategory: 'Eléctrico', standardHours: 0.5 },
+
+    // GENERIC / OTHERS
+    { id: '9', bydCode: 'SHARK_LAB_01', bydType: 'Labor', daltonCode: 'S_LAB_01', status: 'Pending', description: 'Shark Battery Replace', vehicleSeries: 'SHARK', vehicleModel: 'SHARK', mainCategory: 'Motor' },
+    { id: '10', bydCode: 'HAN-BRK-RR', bydType: 'Labor', daltonCode: 'BRK-RR', status: 'Linked', description: 'Reemplazo Pastillas Traseras Han', vehicleSeries: 'HAN EV', vehicleModel: 'HAN EV', mainCategory: 'Frenos', standardHours: 1.0 },
+    { id: '11', bydCode: 'TANG-AC-SERV', bydType: 'Labor', daltonCode: 'AC-01', status: 'Linked', description: 'Mantenimiento A/C Tang', vehicleSeries: 'TANG', vehicleModel: 'TANG', mainCategory: 'Mantenimiento', standardHours: 1.1 }
   ];
 
   private mockOrders: ServiceOrder[] = [
-    // Caso 1: Orden Pendiente con Logs de error
+    // GRUPO 1: SONG PLUS 2025 (Varios items pendientes para probar Batch)
     {
-      id: '435', branchCode: 'MEX022429', docType: 'OS', orderNumber: 'XCL00435', date: '2025-11-12', 
+      id: '435', branchCode: 'MEX022429', docType: 'OR', orderNumber: 'XCL00435', date: '2025-11-12', 
       customerCode: '9003', customerName: 'DE LA MORA GUTIERREZ ANDRES', vin: 'LGXC74C48S0147557', 
       modelCodeRaw: 'SOPL25BY', modelDescRaw: 'SONG PLUS 2025 BC DM-I AT DELAN BLACK', year: '2025',
       totalAmount: 1795.22, status: 'Pending', 
@@ -62,9 +77,31 @@ export class ApiService {
       ], 
       logs: []
     },
-    // Caso 2: Orden Completada
     {
-      id: '434', branchCode: 'MEX022429', docType: 'OS', orderNumber: 'XCL00434', date: '2025-11-12', 
+      id: '432', branchCode: 'MEX022429', docType: 'OR', orderNumber: 'XCL00432', date: '2025-11-12', 
+      customerCode: '4418', customerName: 'RAMIREZ OROZCO BENJAMIN', vin: 'LGXC74C42S0023462', 
+      modelCodeRaw: 'SOPL25BY', modelDescRaw: 'SONG PLUS 2025 BL DM-I AT EMPEROR RED', year: '2025',
+      totalAmount: 812.00, status: 'In Process', 
+      items: [
+          { code: 'MO006', description: 'REVISION DE RUIDO EN SUSPENSION TRASERA', quantity: 1, total: 700.00, isLinked: false }
+      ], 
+      logs: []
+    },
+    {
+      id: '430', branchCode: 'MEX022429', docType: 'OR', orderNumber: 'XCL00430', date: '2025-11-11', 
+      customerCode: '5521', customerName: 'PEREZ LOPEZ JUAN', vin: 'LGXC74C42S0029988', 
+      modelCodeRaw: 'SOPL25BY', modelDescRaw: 'SONG PLUS 2025 BL DM-I AT GREY', year: '2025',
+      totalAmount: 2100.00, status: 'In Process', 
+      items: [
+          { code: 'MO006', description: 'SERVICIO DE MANTENIMIENTO 10,000 KMS', quantity: 1, total: 1800.00, isLinked: false },
+          { code: 'FIL-ACE', description: 'FILTRO DE ACEITE', quantity: 1, total: 300.00, isLinked: false }
+      ], 
+      logs: []
+    },
+
+    // GRUPO 2: DOLPHIN MINI 2024 (Grupo distinto para probar agrupación)
+    {
+      id: '434', branchCode: 'MEX022429', docType: 'OR', orderNumber: 'XCL00434', date: '2025-11-12', 
       customerCode: '6881', customerName: 'MORENO GONZALEZ RAFAEL ANTONIO', vin: 'LGXCE4CC2S0064848', 
       modelCodeRaw: 'DOLPHIN25', modelDescRaw: 'DOLPHIN MINI 2025 BL PLUS EV AT BLANCO', year: '2025',
       totalAmount: 1700.63, status: 'Completed', 
@@ -75,22 +112,36 @@ export class ApiService {
       logs: []
     },
     {
-      id: '433', branchCode: 'MEX022429', docType: 'OS', orderNumber: 'XCL00433', date: '2025-11-12', 
+      id: '429', branchCode: 'MEX022429', docType: 'OR', orderNumber: 'XCL00429', date: '2025-11-11', 
+      customerCode: '1122', customerName: 'GOMEZ MARIA', vin: 'LGXCE4CC2S0065511', 
+      modelCodeRaw: 'DOLPHIN25', modelDescRaw: 'DOLPHIN MINI 2025 BL EV ROSE', year: '2025',
+      totalAmount: 500.00, status: 'Pending', 
+      items: [
+          { code: 'MO006', description: 'REVISION DE PLUMILLAS LIMPIAPARABRISAS', quantity: 0.5, total: 500.00, isLinked: false }
+      ], 
+      logs: []
+    },
+
+    // GRUPO 3: SEAL (Unidad única)
+    {
+      id: '428', branchCode: 'MEX022429', docType: 'OR', orderNumber: 'XCL00428', date: '2025-11-10', 
+      customerCode: '8899', customerName: 'LUIS FERNANDO TORRES', vin: 'LPE19W2A0SF091122', 
+      modelCodeRaw: 'SEAL24', modelDescRaw: 'SEAL 2024 AWD PERFORMANCE BLACK', year: '2024',
+      totalAmount: 1200.00, status: 'In Process', 
+      items: [
+          { code: 'MO006', description: 'ACTUALIZACION DE SOFTWARE SISTEMA INFOENTRETENIMIENTO', quantity: 1.5, total: 1200.00, isLinked: false }
+      ], 
+      logs: []
+    },
+
+    // GRUPO 4: SHARK (Híbrido)
+    {
+      id: '433', branchCode: 'MEX022429', docType: 'OR', orderNumber: 'XCL00433', date: '2025-11-12', 
       customerCode: '3088', customerName: 'RAMIREZ AMADOR FAUSTO ALONSO', vin: 'LPE19W2A0SF095657', 
       modelCodeRaw: 'SHARK25', modelDescRaw: 'SHARK 2025 BL PLUG IN HIBRIDO DM-O GS AT VERDE BOREAL', year: '2025',
       totalAmount: 812.00, status: 'In Process', 
       items: [
           { code: 'MO006', description: 'UNIDAD INGRESA A TALLER POR TESTIGO DE CHECK ENGINE QUE APARECE OCASIONALMENTE', quantity: 1, total: 700.00, isLinked: false }
-      ], 
-      logs: []
-    },
-    {
-      id: '432', branchCode: 'MEX022429', docType: 'OS', orderNumber: 'XCL00432', date: '2025-11-12', 
-      customerCode: '4418', customerName: 'RAMIREZ OROZCO BENJAMIN', vin: 'LGXC74C42S0023462', 
-      modelCodeRaw: 'SOPL25BY', modelDescRaw: 'SONG PLUS 2025 BL DM-I AT EMPEROR RED', year: '2025',
-      totalAmount: 812.00, status: 'In Process', 
-      items: [
-          { code: 'MO006', description: 'UNIDAD INGRESA A TALLER POR RUIDO EN AMORTIGUADORES TRASEROS', quantity: 1, total: 700.00, isLinked: false }
       ], 
       logs: []
     }
@@ -99,6 +150,7 @@ export class ApiService {
   private mockLogs: IntegrationLog[] = [
     { id: '1', vchOrdenServicio: 'XCL00435', vchLog: '1 -> 190802', dtmcreated: new Date().toISOString(), txtDataJson: '{"dealerCode":"MEX02231...}', vchMessage: '{"success":false,"message":"Warranty activation date for VIN mismatch"}', VIN: 'LGXC74C48S0147557', labourcode: 'WSA3HAC02101GH00', Cod_TpAut: 'SOPL25BY', Desc_TpAut: 'SONG PLUS 2025 BL', isError: true },
     { id: '2', vchOrdenServicio: 'XCL00434', vchLog: '1 -> 190586', dtmcreated: new Date().toISOString(), txtDataJson: '{"dealerCode":"MEX02231...}', vchMessage: '{"success":true,"message":"OK"}', VIN: 'LGXCE4CC2S0064848', labourcode: 'WSATJ00101GH00', Cod_TpAut: 'DOLPHIN25', Desc_TpAut: 'DOLPHIN MINI', isError: false },
+    { id: '3', vchOrdenServicio: 'XCL00430', vchLog: '1 -> 190599', dtmcreated: new Date(Date.now() - 86400000).toISOString(), txtDataJson: '{"dealerCode":"MEX02231...}', vchMessage: '{"success":false,"message":"Invalid Labor Code"}', VIN: 'LGXC74C42S0029988', labourcode: 'UNK-001', Cod_TpAut: 'SOPL25BY', Desc_TpAut: 'SONG PLUS', isError: true },
   ];
 
   // ===========================================================================
@@ -277,7 +329,7 @@ export class ApiService {
       return of(this.mockLogs).pipe(delay(400));
     }
 
-    const config = this.endpointConfig.getConfig('Logs');
+    const config = this.endpointConfig.getConfig('Obtener Logs');
     if (!config || !config.url) return of([]);
 
     let params = new HttpParams();
@@ -300,7 +352,7 @@ export class ApiService {
     );
   }
 
-  /** Vincula un item de orden DMS a un código de catálogo BYD */
+  /** Vincula un item de orden DMS a un código de catálogo BYD (Individual) */
   linkOrderItem(daltonCode: string, bydCode: string, bydType: 'Labor' | 'Repair', description: string): Observable<boolean> {
     if(this.useMockData()) {
         // Actualizar estado en memoria para que la UI refleje el cambio
@@ -328,47 +380,124 @@ export class ApiService {
     );
   }
 
-  /** Transmite la orden completa a Planta (API Externa) */
-  transmitOrderToPlant(order: ServiceOrder): Observable<boolean> {
-     if(this.useMockData()) {
-       // Actualizar estado local
-       const mOrder = this.mockOrders.find(o => o.id === order.id);
-       if(mOrder) mOrder.status = 'Transmitted';
-       
-       // Agregar log simulado de éxito
-       this.mockLogs.unshift({
-         id: crypto.randomUUID(),
-         vchOrdenServicio: order.orderNumber,
-         vchLog: 'MOCK-SUCCESS',
-         dtmcreated: new Date().toISOString(),
-         txtDataJson: JSON.stringify({ vin: order.vin }),
-         vchMessage: '{"success":true, "message":"Simulated Transmission OK"}',
-         VIN: order.vin,
-         labourcode: 'N/A',
-         Cod_TpAut: order.modelCodeRaw,
-         Desc_TpAut: order.modelDescRaw,
-         isError: false
-       });
+  /**
+   * Vincula múltiples ítems en una sola petición HTTP.
+   * Mejora drástica de rendimiento y consistencia transaccional.
+   */
+  linkOrderItemsBatch(items: { daltonCode: string, description: string }[], bydCode: string, bydType: 'Labor' | 'Repair'): Observable<boolean> {
+    if(this.useMockData()) {
+      this.mockOrders.forEach(order => {
+         order.items.forEach(item => {
+            // Verificar si el item está en la lista de batch
+            const inBatch = items.some(i => i.daltonCode === item.code);
+            if (inBatch) {
+               item.isLinked = true;
+               item.linkedBydCode = bydCode;
+               item.linkedBydDescription = "Batch Linked"; // Simplified desc for mock
+            }
+         });
+      });
+      return of(true).pipe(delay(800));
+    }
 
-       return of(true).pipe(delay(1500));
+    const config = this.endpointConfig.getConfig('Vincular Batch');
+    // Fallback a endpoint regular si no existe config específica, aunque no sería eficiente en la vida real
+    const url = config?.url || this.endpointConfig.getConfig('Vincular')?.url?.replace('/link', '/link-batch');
+    
+    if (!url) return of(false);
+
+    const payload = {
+       items: items.map(i => ({ daltonCode: i.daltonCode, description: i.description })),
+       targetBydCode: bydCode,
+       targetBydType: bydType,
+       dealerCode: this.selectedDealerCode()
+    };
+
+    // Asumimos que usamos las opciones del endpoint 'Vincular' si 'Vincular Batch' no existe específicamente
+    const options = config ? this.getHttpOptions(config) : this.getHttpOptions(this.endpointConfig.getConfig('Vincular')!);
+
+    return this.http.post<boolean>(url, payload, options).pipe(
+       catchError(() => of(false))
+    );
+  }
+
+  /**
+   * Construye el payload JSON estandarizado que se enviará a la planta.
+   * Separado de la transmisión para permitir previsualización en UI.
+   */
+  buildTransmissionPayload(order: ServiceOrder): TransmissionPayload {
+    const linkedItems = order.items.filter(i => i.isLinked);
+    
+    return {
+      header: {
+        dealerCode: this.selectedDealerCode(),
+        roNumber: order.orderNumber,
+        vin: order.vin,
+        repairDate: order.date,
+        modelCode: order.modelCodeRaw
+      },
+      laborList: linkedItems.map((item, index) => ({
+        lineId: index + 1,
+        operationCode: item.linkedBydCode || '',
+        internalCode: item.code,
+        description: item.linkedBydDescription || item.description,
+        hours: 1.0 // TODO: Mapear horas reales si existen
+      }))
+    };
+  }
+
+  /** Transmite la orden completa a Planta (API Externa) */
+  transmitOrderToPlant(payload: TransmissionPayload): Observable<boolean> {
+     if(this.useMockData()) {
+       // Simulación de éxito tras delay
+       const mOrder = this.mockOrders.find(o => o.orderNumber === payload.header.roNumber);
+       if(mOrder) mOrder.status = 'Transmitted';
+       return of(true).pipe(delay(2000));
      }
 
      const config = this.endpointConfig.getConfig('Transmitir');
      if (!config || !config.url) return of(false);
      
-     // Construir payload según especificación de planta
-     const payload = {
-        vin: order.vin,
-        dealerCode: this.selectedDealerCode(),
-        orderRef: order.orderNumber,
-        items: order.items.filter(i => i.isLinked).map(i => ({
-           type: 'Labor', // Simplificado
-           code: i.linkedBydCode,
-           description: i.linkedBydDescription || i.description
-        }))
+     return this.http.post<boolean>(config.url, payload, this.getHttpOptions(config)).pipe(
+        catchError(() => of(false))
+     );
+  }
+
+  /**
+   * Crea un registro de log oficial después de una transmisión (Exitosa o Fallida).
+   * En modo Demo, inserta en el array local.
+   */
+  createIntegrationLog(payload: TransmissionPayload, responseMessage: string, isSuccess: boolean): Observable<boolean> {
+     if (this.useMockData()) {
+       this.mockLogs.unshift({
+         id: crypto.randomUUID(),
+         vchOrdenServicio: payload.header.roNumber,
+         vchLog: `LOG-${Math.floor(Math.random() * 1000)}`,
+         dtmcreated: new Date().toISOString(),
+         txtDataJson: JSON.stringify(payload),
+         vchMessage: responseMessage,
+         VIN: payload.header.vin,
+         labourcode: payload.laborList[0]?.operationCode || 'N/A',
+         Cod_TpAut: payload.header.modelCode,
+         Desc_TpAut: '',
+         isError: !isSuccess
+       });
+       return of(true).pipe(delay(800)); // Delay simulado de escritura en BD
+     }
+
+     const config = this.endpointConfig.getConfig('Registrar Log');
+     if (!config || !config.url) return of(false);
+
+     const logEntry = {
+        vchOrdenServicio: payload.header.roNumber,
+        txtDataJson: JSON.stringify(payload),
+        vchMessage: responseMessage,
+        vin: payload.header.vin,
+        isError: !isSuccess,
+        dealerCode: this.selectedDealerCode()
      };
 
-     return this.http.post<boolean>(config.url, payload, this.getHttpOptions(config)).pipe(
+     return this.http.post<boolean>(config.url, logEntry, this.getHttpOptions(config)).pipe(
         catchError(() => of(false))
      );
   }
