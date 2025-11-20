@@ -3,6 +3,11 @@ import { Injectable } from '@angular/core';
 import { GoogleGenAI, Type } from '@google/genai';
 import { MappingItem, AiSuggestion } from '../models/app.types';
 
+/**
+ * Servicio de Inteligencia Artificial (Google Gemini).
+ * Se encarga de las tareas cognitivas: traducción técnica, análisis de anomalías
+ * y sugerencia de mapeos difusos.
+ */
 @Injectable({
   providedIn: 'root'
 })
@@ -10,12 +15,18 @@ export class GeminiService {
   private ai: GoogleGenAI;
 
   constructor() {
+    // Se asume que process.env.API_KEY está inyectado por el entorno de compilación
     this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
   }
 
+  /**
+   * Analiza una muestra de datos cargados para detectar problemas de calidad.
+   * Usa el modelo 'gemini-2.5-flash' para velocidad y bajo costo.
+   */
   async analyzeDataIntegrity(data: MappingItem[]): Promise<string> {
     if (!process.env.API_KEY) return "API Key no configurada.";
 
+    // Tomamos solo una muestra pequeña para no exceder límites de tokens
     const sample = data.slice(0, 20).map(item => 
       `BYD: ${item.bydCode} (${item.bydType}) <-> Dalton: ${item.daltonCode}`
     ).join('\n');
@@ -48,8 +59,66 @@ export class GeminiService {
   }
 
   /**
-   * Suggests potential BYD mappings for a given Dalton item description.
-   * Uses historical mappings as context/experience (Few-Shot Learning).
+   * Traduce una descripción técnica (generalmente en Español "sucio" del DMS)
+   * a Inglés Técnico y extrae palabras clave (Tags) para búsqueda difusa.
+   */
+  async translateToKeywords(text: string): Promise<{ translation: string; keywords: string[] }> {
+    if (!process.env.API_KEY) return { translation: '', keywords: [] };
+
+    const prompt = `
+      You are an expert automotive translator and parts specialist.
+      Task: 
+      1. Translate the following Service Description from Spanish to Technical English.
+      2. Extract a broad list of 15 to 20 keywords/tags to help find this item in a master catalog.
+      
+      CRITICAL RULES FOR KEYWORDS (MAXIMIZE MATCHING POTENTIAL):
+      1. **Deconstruct everything**: If "Smart Card", return ["Smart Card", "Card", "Smart"].
+      2. **Singular AND Plural**: If "Lights", YOU MUST ALSO include "Light". If "Brakes", include "Brake".
+      3. **Synonyms & Verbs**: "Replace" -> ["Replacement", "Changing", "Renew", "Install"].
+      4. **Abbreviations**: Include standard automotive acronyms (e.g., "Assembly" -> "Assy", "Right" -> "RH", "Left" -> "LH").
+      
+      Input Description: "${text}"
+      
+      Return JSON format:
+      {
+        "translation": "The English translation",
+        "keywords": ["Keyword1", "Keyword2", "Keyword3", ...]
+      }
+    `;
+
+    // Schema estricto para garantizar que recibimos JSON válido
+    const schema = {
+      type: Type.OBJECT,
+      properties: {
+        translation: { type: Type.STRING },
+        keywords: { type: Type.ARRAY, items: { type: Type.STRING } }
+      },
+      required: ["translation", "keywords"]
+    };
+
+    try {
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: schema
+        }
+      });
+
+      const jsonText = response.text;
+      if (!jsonText) return { translation: '', keywords: [] };
+      
+      return JSON.parse(jsonText);
+    } catch (error) {
+      console.error('Gemini Translation Error:', error);
+      return { translation: '', keywords: [] };
+    }
+  }
+
+  /**
+   * Sugiere mapeos potenciales utilizando "Few-Shot Learning".
+   * Se le pasa un historial de mapeos correctos para que la IA aprenda el patrón.
    */
   async suggestMapping(
     daltonDescription: string, 
@@ -58,9 +127,7 @@ export class GeminiService {
   ): Promise<AiSuggestion[]> {
     if (!process.env.API_KEY) return [];
 
-    // Prepare Context (Top 30 most relevant or recent items to save tokens)
-    // In a real app, we would use vector search here. 
-    // For now, we just pass a sample of existing valid mappings as "Experience".
+    // Contexto: Enviamos ejemplos exitosos previos
     const contextSample = history
       .filter(h => h.status === 'Linked')
       .slice(0, 30)
@@ -81,9 +148,9 @@ export class GeminiService {
       ]
       
       Instrucciones:
-      1. Analiza la 'Base de Conocimiento' para encontrar patrones similares (ej. palabras clave como 'Batería', 'Freno', 'Servicio').
+      1. Analiza la 'Base de Conocimiento' para encontrar patrones similares.
       2. Si encuentras algo similar, sugiere ese código o uno derivado.
-      3. Si no hay similitud, usa tu conocimiento general de códigos BYD (formatos L-XXXX para Labor, R-XXXX para Repair) para inventar una sugerencia plausible o genérica.
+      3. Si no hay similitud, usa tu conocimiento general de códigos BYD.
       4. Genera exactamente 3 sugerencias.
       
       Retorna JSON estricto.
@@ -94,9 +161,9 @@ export class GeminiService {
       items: {
         type: Type.OBJECT,
         properties: {
-          code: { type: Type.STRING, description: "The suggested BYD code" },
-          type: { type: Type.STRING, enum: ["Labor", "Repair"], description: "The operation type" },
-          reasoning: { type: Type.STRING, description: "Very short explanation (e.g. 'Matches historical pattern for Brakes')" },
+          code: { type: Type.STRING },
+          type: { type: Type.STRING, enum: ["Labor", "Repair"] },
+          reasoning: { type: Type.STRING },
           confidence: { type: Type.STRING, enum: ["High", "Medium", "Low"] }
         },
         required: ["code", "type", "reasoning", "confidence"]
@@ -110,7 +177,7 @@ export class GeminiService {
         config: {
           responseMimeType: 'application/json',
           responseSchema: schema,
-          temperature: 0.4 // Low temperature for more deterministic/analytical results
+          temperature: 0.4 
         }
       });
 

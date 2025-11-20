@@ -1,5 +1,5 @@
 
-import { Component, inject, signal, effect, computed } from '@angular/core';
+import { Component, inject, signal, effect, computed, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
@@ -7,11 +7,16 @@ import { IntegrationLog } from '../../models/app.types';
 import { HttpClient } from '@angular/common/http';
 import { EndpointConfigService } from '../../services/endpoint-config.service';
 
+/**
+ * Componente de monitoreo de Logs de Integración.
+ * Permite visualizar el historial de transacciones con la planta.
+ */
 @Component({
   selector: 'app-log-monitor',
   standalone: true,
   imports: [CommonModule, FormsModule],
-  templateUrl: './log-monitor.component.html'
+  templateUrl: './log-monitor.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class LogMonitorComponent {
   private api = inject(ApiService);
@@ -21,11 +26,11 @@ export class LogMonitorComponent {
   logs = signal<IntegrationLog[]>([]);
   isLoading = signal(false);
   
-  // Filters
+  // Filtros
   searchTerm = signal('');
   showErrorsOnly = signal(false);
 
-  // Computed Filtered Logs
+  // --- COMPUTED: Filtrado Reactivo ---
   filteredLogs = computed(() => {
     let list = this.logs();
     const term = this.searchTerm().toLowerCase();
@@ -47,7 +52,7 @@ export class LogMonitorComponent {
     return list;
   });
   
-  // Mock Logs based on user screenshot
+  // Datos Mock locales para demostración si falla API
   private mockLogs: IntegrationLog[] = [
     { id: '1', vchOrdenServicio: 'XCL00435', vchLog: '1 -> 190802', dtmcreated: '19/11/2025', txtDataJson: '{"dealerCode":"MEX02231...}', vchMessage: '{"success":true,"message":"Warranty activation date for VIN... mismatch"}', VIN: 'LGXC74C46S5105961', labourcode: 'WSA3HAC02101GH00', Cod_TpAut: 'SOPL25BD', Desc_TpAut: 'SONG PLUS 2025 BL', isError: true },
     { id: '2', vchOrdenServicio: 'XCL00455', vchLog: '1 -> 190586', dtmcreated: '19/11/2025', txtDataJson: '{"dealerCode":"MEX02231...}', vchMessage: '{"success":true,"message":"labour code and vehicle series not match"}', VIN: 'LGXC74C47S001793', labourcode: 'WSATJ00101GH00', Cod_TpAut: 'SOPL25BD', Desc_TpAut: 'SONG PLUS 2025 BL', isError: true },

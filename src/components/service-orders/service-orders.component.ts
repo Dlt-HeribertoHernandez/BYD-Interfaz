@@ -1,48 +1,63 @@
 
-import { Component, inject, signal, effect, computed } from '@angular/core';
+import { Component, inject, signal, effect, computed, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { StoreService } from '../../services/store.service';
 import { GeminiService } from '../../services/gemini.service';
 import { OrderStrategyService } from '../../services/order-strategy.service';
-import { ServiceOrder, ServiceOrderItem, OrderStatus, AiSuggestion, MappingItem } from '../../models/app.types';
+import { BusinessRulesService } from '../../services/business-rules.service';
+import { ServiceOrder, ServiceOrderItem, OrderStatus, AiSuggestion, MappingItem, IntegrationLog } from '../../models/app.types';
+import { NotificationService } from '../../services/notification.service';
+import { forkJoin } from 'rxjs';
 
+// Interfaz auxiliar interna para manejo de puntajes de coincidencia
+interface ScoredMapping extends MappingItem {
+  matchScore: number;
+}
+
+/**
+ * Componente de visualización y gestión de Órdenes de Servicio.
+ * Es el corazón operativo donde se realiza la vinculación manual asistida por IA.
+ */
 @Component({
   selector: 'app-service-orders',
   standalone: true,
   imports: [CommonModule, FormsModule, DatePipe],
-  templateUrl: './service-orders.component.html'
+  templateUrl: './service-orders.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ServiceOrdersComponent {
   api = inject(ApiService);
   store = inject(StoreService);
   gemini = inject(GeminiService);
   strategyService = inject(OrderStrategyService);
+  rulesService = inject(BusinessRulesService);
+  notification = inject(NotificationService);
 
-  // Filters
+  // --- FILTROS (Vinculados a ngModel) ---
   startDate = new Date().toISOString().split('T')[0];
   endDate = new Date().toISOString().split('T')[0];
-  selectedOrderType = signal<string>('ALL'); // Filter by DocType
-  searchOrderNumber = signal<string>(''); // Filter by Order Number (Folio)
+  selectedOrderType = signal<string>('ALL');
+  searchOrderNumber = signal<string>('');
 
-  // State
+  // --- ESTADO ---
   rawOrders = signal<ServiceOrder[]>([]);
   isLoading = signal(false);
   selectedOrder = signal<ServiceOrder | null>(null);
+  isTransmitting = signal(false);
 
-  // Computed: Final Filtered Orders
+  // --- COMPUTED: Filtrado de Órdenes ---
+  // Optimizado con Signals para evitar recalculaciones en cada ciclo de detección
   filteredOrders = computed(() => {
     let list = this.rawOrders();
     const typeFilter = this.selectedOrderType();
     const orderSearch = this.searchOrderNumber().toLowerCase().trim();
 
-    // 1. Filter by Type
     if (typeFilter !== 'ALL') {
       list = list.filter(o => o.docType === typeFilter);
     }
 
-    // 2. Filter by Order Number
     if (orderSearch) {
       list = list.filter(o => o.orderNumber.toLowerCase().includes(orderSearch));
     }
@@ -50,14 +65,45 @@ export class ServiceOrdersComponent {
     return list;
   });
 
-  // --- LINKING MODAL STATE ---
+  // --- LÓGICA DE VISTA DETALLADA ---
+  
+  /**
+   * Ítems visibles según la Regla de Negocio Activa.
+   * Por ejemplo, oculta refacciones si la regla solo pide "Labor".
+   */
+  visibleItems = computed(() => {
+    const order = this.selectedOrder();
+    if (!order) return [];
+    return order.items.filter(item => this.rulesService.isItemRelevant(item.code));
+  });
+
+  /**
+   * Resumen de lo que se está ocultando (Refacciones, Aceites, etc.)
+   */
+  hiddenItemsSummary = computed(() => {
+    const order = this.selectedOrder();
+    if (!order) return null;
+    
+    const hidden = order.items.filter(item => !this.rulesService.isItemRelevant(item.code));
+    if (hidden.length === 0) return null;
+
+    const totalHiddenValue = hidden.reduce((acc, curr) => acc + (curr.total || 0), 0);
+    
+    return {
+      count: hidden.length,
+      totalValue: totalHiddenValue,
+      sampleNames: hidden.slice(0, 2).map(i => i.description).join(', ') + (hidden.length > 2 ? '...' : '')
+    };
+  });
+
+  // --- MODAL DE VINCULACIÓN INTELIGENTE ---
   itemToLink = signal<ServiceOrderItem | null>(null);
   
-  // The "Smart" Context
-  targetBydSeries = signal<string>(''); // The BYD Series selected by user (e.g. 'SONG PLUS DMI')
-  searchTerm = signal<string>(''); // Filter for the candidates list
+  // Contexto "Smart"
+  targetBydSeries = signal<string>(''); // Serie BYD seleccionada manualmente o auto-detectada
+  searchTerm = signal<string>(''); 
   
-  // Derived: Unique BYD Series from the loaded Excel (Master Data)
+  // Series únicas disponibles en el catálogo cargado
   availableBydSeries = computed(() => {
     const mappings = this.store.mappings();
     const series = new Set<string>();
@@ -68,7 +114,16 @@ export class ServiceOrdersComponent {
     return Array.from(series).sort();
   });
 
-  // Derived: Candidate Codes filtered by selected Series AND Search Term
+  // Estado IA
+  isAiAnalyzing = signal(false);
+  aiAnalysis = signal<{ translation: string, keywords: string[] } | null>(null);
+
+  // --- LÓGICA DE BÚSQUEDA Y CANDIDATOS ---
+
+  /**
+   * Candidatos filtrados por Serie y Término de Búsqueda.
+   * Limita a 50 resultados para rendimiento.
+   */
   filteredCandidates = computed(() => {
     const series = this.targetBydSeries().toLowerCase();
     const term = this.searchTerm().toLowerCase();
@@ -76,23 +131,70 @@ export class ServiceOrdersComponent {
     if (!series) return [];
 
     return this.store.mappings().filter(m => {
-      // 1. Strict Series Match
-      const matchSeries = (m.vehicleSeries?.toLowerCase() === series) || (m.vehicleModel?.toLowerCase() === series);
+      // Coincidencia estricta de serie (evita mostrar piezas de otro coche)
+      const s1 = m.vehicleSeries?.toLowerCase() || '';
+      const s2 = m.vehicleModel?.toLowerCase() || '';
+      const matchSeries = (s1 === series) || (s2 === series);
+      
       if (!matchSeries) return false;
 
-      // 2. Search Term Match (Description or Code)
       if (!term) return true;
       return (m.description?.toLowerCase().includes(term) || m.bydCode.toLowerCase().includes(term));
-    }).slice(0, 50); // Limit results for performance
+    }).slice(0, 50);
+  });
+
+  /**
+   * Sugerencias de IA (Ranking Algorítmico).
+   * Utiliza las keywords extraídas por Gemini para puntuar coincidencias.
+   */
+  aiSuggestedCandidates = computed(() => {
+    const analysis = this.aiAnalysis();
+    const series = this.targetBydSeries().toLowerCase();
+    
+    if (!analysis || !series) return [];
+    
+    const keywords = analysis.keywords
+      .map(k => k.toLowerCase().trim())
+      .filter(k => k.length > 2); // Ignorar palabras muy cortas
+      
+    if (keywords.length === 0) return [];
+
+    const candidates: ScoredMapping[] = [];
+
+    this.store.mappings().forEach(m => {
+      const s1 = m.vehicleSeries?.toLowerCase() || '';
+      const s2 = m.vehicleModel?.toLowerCase() || '';
+      const matchSeries = (s1 === series) || (s2 === series);
+      if (!matchSeries) return;
+
+      let score = 0;
+      const desc = m.description?.toLowerCase() || '';
+      const code = m.bydCode?.toLowerCase() || '';
+      const descTokens = desc.split(/[\s-_,.]+/);
+
+      keywords.forEach(kw => {
+        // 1. Coincidencia exacta de palabra (Alto valor)
+        if (descTokens.includes(kw)) score += 15;
+        // 2. Contenencia parcial (Valor medio)
+        else if (desc.includes(kw)) score += 8;
+        // 3. Coincidencia en código (mnemónicos)
+        if (code.includes(kw)) score += 5;
+        // 4. Bonus inicio de cadena
+        if (kw.length > 4 && desc.startsWith(kw)) score += 5;
+      });
+
+      if (score > 0) {
+        candidates.push({ ...m, matchScore: score });
+      }
+    });
+
+    return candidates.sort((a, b) => b.matchScore - a.matchScore).slice(0, 20); 
   });
 
   selectedCandidate = signal<MappingItem | null>(null);
 
-  // AI State
-  isAiLoading = signal(false);
-  aiSuggestions = signal<AiSuggestion[]>([]);
-
   constructor() {
+    // Efecto: Recargar órdenes si cambia la agencia seleccionada
     effect(() => {
       const dealer = this.api.selectedDealerCode();
       this.api.useMockData(); 
@@ -105,6 +207,10 @@ export class ServiceOrdersComponent {
     });
   }
 
+  /**
+   * Carga órdenes y logs simultáneamente.
+   * Usa `forkJoin` para esperar ambas respuestas antes de procesar.
+   */
   fetchOrders() {
     const currentDealer = this.api.selectedDealerCode();
     if (!currentDealer) {
@@ -115,9 +221,14 @@ export class ServiceOrdersComponent {
     this.isLoading.set(true);
     this.selectedOrder.set(null);
     
-    this.api.getOrders(this.startDate, this.endDate, currentDealer).subscribe({
-      next: (data) => {
-        this.rawOrders.set(data);
+    forkJoin({
+      orders: this.api.getOrders(this.startDate, this.endDate, currentDealer),
+      logs: this.api.getIntegrationLogs(this.startDate, this.endDate)
+    }).subscribe({
+      next: ({ orders, logs }) => {
+        // Enriquecer las órdenes con el estado real de los logs (Transmitted/Error)
+        const mergedOrders = this.mergeOrdersWithLogs(orders, logs);
+        this.rawOrders.set(mergedOrders);
         this.isLoading.set(false);
       },
       error: (err) => {
@@ -125,6 +236,40 @@ export class ServiceOrdersComponent {
         this.rawOrders.set([]);
         this.isLoading.set(false);
       }
+    });
+  }
+
+  /**
+   * Fusiona órdenes con sus logs para determinar el estado real.
+   * Si el último log es un error, el estado de la orden pasa a 'Error'.
+   */
+  mergeOrdersWithLogs(orders: ServiceOrder[], logs: IntegrationLog[]): ServiceOrder[] {
+    return orders.map(order => {
+      const orderLogs = logs
+        .filter(l => l.vchOrdenServicio === order.orderNumber)
+        .sort((a, b) => new Date(b.dtmcreated).getTime() - new Date(a.dtmcreated).getTime());
+
+      if (orderLogs.length > 0) {
+        const latestLog = orderLogs[0];
+        let newStatus = order.status;
+        
+        if (latestLog.isError) {
+          newStatus = 'Error';
+        } else {
+          newStatus = 'Transmitted';
+        }
+
+        return {
+          ...order,
+          status: newStatus,
+          logs: orderLogs.map(l => ({
+             timestamp: l.dtmcreated,
+             message: l.vchMessage,
+             status: l.isError ? 'Error' : 'Transmitted'
+          }))
+        };
+      }
+      return order;
     });
   }
 
@@ -147,10 +292,47 @@ export class ServiceOrdersComponent {
     }
   }
 
-  // --- SMART LINKING LOGIC ---
+  // --- LÓGICA DE TRANSMISIÓN ---
+
+  canTransmit(order: ServiceOrder): boolean {
+    const hasLinks = order.items.some(i => i.isLinked);
+    return hasLinks && order.status !== 'Transmitted';
+  }
+
+  transmitOrderToPlant() {
+    const order = this.selectedOrder();
+    if (!order) return;
+    
+    // Validación: Los códigos placeholder (obligatorios) deben estar vinculados
+    const unlinkedPlaceholders = order.items.filter(i => 
+      !i.isLinked && this.rulesService.isPlaceholderCode(i.code)
+    );
+
+    if (unlinkedPlaceholders.length > 0) {
+       this.notification.show(
+         `Faltan vincular ${unlinkedPlaceholders.length} items obligatorios (Ej: ${unlinkedPlaceholders[0].code}).`, 
+         'warning'
+       );
+       return;
+    }
+
+    if (!confirm(`¿Transmitir Orden ${order.orderNumber} a Planta BYD?`)) return;
+
+    this.isTransmitting.set(true);
+    this.api.transmitOrderToPlant(order).subscribe(success => {
+       this.isTransmitting.set(false);
+       if (success) {
+          this.notification.show('Orden transmitida exitosamente.', 'success');
+          this.fetchOrders(); // Refrescar estado
+       } else {
+          this.notification.show('Error al transmitir. Verifique logs.', 'error');
+       }
+    });
+  }
+
+  // --- LÓGICA DE VINCULACIÓN (MODAL) ---
 
   openLinkModal(item: ServiceOrderItem) {
-    // Check Business Rule: Is linking allowed for this order type?
     const order = this.selectedOrder();
     if (!order) return;
 
@@ -162,14 +344,36 @@ export class ServiceOrdersComponent {
 
     this.itemToLink.set(item);
     this.selectedCandidate.set(null);
-    this.searchTerm.set(item.description); // Pre-fill search with Dalton Desc
-    this.aiSuggestions.set([]); 
+    this.searchTerm.set(''); 
+    this.aiAnalysis.set(null);
 
-    // Try to auto-select BYD Series based on Order Model
+    // Auto-match de serie del vehículo
     this.tryAutoMatchSeries(order.modelDescRaw || order.modelCodeRaw);
   }
 
-  // Attempt to fuzzy match "SONG PLUS 2025" -> "SONG PLUS DMI"
+  async analyzeItemWithAi() {
+    const item = this.itemToLink();
+    if (!item) return;
+
+    this.isAiAnalyzing.set(true);
+    try {
+      // Llamada a Gemini para traducción y keywords
+      const result = await this.gemini.translateToKeywords(item.description);
+      this.aiAnalysis.set(result);
+      
+      if (result.translation) {
+        this.searchTerm.set(result.translation);
+        this.notification.show('Búsqueda actualizada con traducción al inglés', 'info', 3000);
+      }
+    } finally {
+      this.isAiAnalyzing.set(false);
+    }
+  }
+
+  /**
+   * Intenta adivinar la serie BYD basándose en la descripción del modelo del DMS.
+   * Ej: "SONG PLUS 2025" -> "SONG PLUS DMI"
+   */
   tryAutoMatchSeries(orderModel: string) {
     if (!orderModel) return;
     const normalized = orderModel.toUpperCase();
@@ -178,10 +382,10 @@ export class ServiceOrdersComponent {
     if (match) {
       this.targetBydSeries.set(match);
     } else {
-      // Fallback: If "SONG" is in both
+      // Fallback parcial
       const partial = this.availableBydSeries().find(s => s.includes(normalized.split(' ')[0]));
       if (partial) this.targetBydSeries.set(partial);
-      else this.targetBydSeries.set(''); // User must select
+      else this.targetBydSeries.set('');
     }
   }
 
@@ -201,18 +405,19 @@ export class ServiceOrdersComponent {
 
     if (!item || !candidate || !order) return;
 
-    // Validate Series (Client-side check to prevent "series not match" error)
-    // Although the UI filters, this is a final safety check logic
-    console.log(`Linking Item ${item.code} to BYD ${candidate.bydCode} (${candidate.vehicleSeries}) for VIN ${order.vin}`);
-
     this.api.linkOrderItem(item.code, candidate.bydCode, candidate.bydType, item.description)
       .subscribe(success => {
         if (success) {
-          // Optimistic update
+          // Actualización local optimista
           if (order) {
              const updatedItems = order.items.map(i => {
                if (i.code === item.code) {
-                 return { ...i, isLinked: true, linkedBydCode: candidate.bydCode };
+                 return { 
+                   ...i, 
+                   isLinked: true, 
+                   linkedBydCode: candidate.bydCode,
+                   linkedBydDescription: candidate.description 
+                 };
                }
                return i;
              });

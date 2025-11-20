@@ -1,5 +1,5 @@
 
-import { Component, signal, inject, ElementRef, ViewChild, computed, effect } from '@angular/core';
+import { Component, signal, inject, ElementRef, ViewChild, computed, effect, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } from '@angular/forms';
 import { StoreService } from '../services/store.service';
@@ -7,34 +7,51 @@ import { GeminiService } from '../services/gemini.service';
 import { ApiService } from '../services/api.service';
 import { EndpointConfigService, BydModelSqlRow } from '../services/endpoint-config.service';
 import { NotificationService } from '../services/notification.service';
+import { BusinessRulesService } from '../services/business-rules.service';
 import { MappingItem, ServiceOrderItem } from '../models/app.types';
 
 declare const XLSX: any;
 
+/**
+ * Componente principal para la gestión de la vinculación (Mapping).
+ * Permite:
+ * 1. Cargar Excel masivo.
+ * 2. Visualizar y filtrar el catálogo BYD.
+ * 3. Vincular códigos manualmente.
+ * 4. Ver historial de uso de códigos.
+ */
 @Component({
   selector: 'app-mapping-linker',
   standalone: true,
   imports: [CommonModule, FormsModule, ReactiveFormsModule],
-  templateUrl: './mapping-linker.component.html'
+  templateUrl: './mapping-linker.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush // MEJORA RENDIMIENTO: Solo actualiza si cambian los Inputs o Signals
 })
 export class MappingLinkerComponent {
+  // Inyecciones de dependencias
   private store = inject(StoreService);
   private api = inject(ApiService);
   private gemini = inject(GeminiService);
   public endpointConfig = inject(EndpointConfigService);
   private notification = inject(NotificationService);
+  public rulesService = inject(BusinessRulesService);
   private fb = inject(FormBuilder);
 
-  // Raw data from store
+  // --- ESTADO REACTIVO (Signals) ---
+  // Datos crudos del store
   mappings = this.store.mappings;
   stats = this.store.stats;
 
-  // --- STRUCTURED VIEW STATE ---
-  selectedSeries = signal<string | null>(null); // The active "Folder" (Vehicle Series)
-  selectedCategory = signal<string | null>(null); // The active "Tag" (Main Category)
+  // Estado de filtros de vista
+  selectedSeries = signal<string | null>(null); // Serie de vehículo activa (Carpeta)
+  selectedCategory = signal<string | null>(null); // Categoría principal activa
   searchTerm = signal<string>('');
+  showLinkedOnly = signal(false);
 
-  // Computed: Grouped Series List for Sidebar
+  // --- COMPUTED: Lógica de Agrupación y Filtrado ---
+  // Estas computaciones se cachean y solo se re-ejecutan si sus dependencias cambian.
+
+  // Agrupar por Serie de Vehículo
   seriesGroups = computed(() => {
     const groups = new Map<string, number>();
     this.mappings().forEach(m => {
@@ -47,7 +64,7 @@ export class MappingLinkerComponent {
       .sort((a, b) => a.name.localeCompare(b.name));
   });
 
-  // Computed: Categories available within the selected Series
+  // Categorías disponibles dentro de la serie seleccionada
   availableCategories = computed(() => {
     const currentSeries = this.selectedSeries();
     if (!currentSeries) return [];
@@ -62,24 +79,30 @@ export class MappingLinkerComponent {
     return Array.from(cats).sort();
   });
 
-  // Computed: Final Filtered Table Data
+  // Lista filtrada final para la tabla
   filteredMappings = computed(() => {
     let list = this.mappings();
     const series = this.selectedSeries();
     const cat = this.selectedCategory();
     const term = this.searchTerm().toLowerCase();
+    const linkedOnly = this.showLinkedOnly();
 
-    // 1. Series Filter (Strict)
+    // 1. Filtro por Serie (Estricto)
     if (series) {
       list = list.filter(m => (m.vehicleSeries || 'GENERICO') === series);
     }
 
-    // 2. Category Filter
+    // 2. Filtro por Categoría
     if (cat) {
       list = list.filter(m => m.mainCategory === cat);
     }
 
-    // 3. Search Term
+    // 3. Filtro "Solo Vinculados"
+    if (linkedOnly) {
+      list = list.filter(m => m.status === 'Linked' || m.daltonCode !== m.bydCode);
+    }
+
+    // 4. Filtro de Texto (Búsqueda global)
     if (term) {
       list = list.filter(m => 
         m.description?.toLowerCase().includes(term) || 
@@ -91,42 +114,53 @@ export class MappingLinkerComponent {
     return list;
   });
 
-  // --- UPLOAD & INSERTION STATE ---
+  // --- ESTADO DE CARGA MASIVA (Upload) ---
+  isUploading = signal(false);
   previewMappings = signal<Omit<MappingItem, 'id' | 'status'>[]>([]);
   previewHeaders = signal<string[]>([]);
-  previewData = signal<any[]>([]);
   showPreviewModal = signal(false);
+  previewData = signal<any[]>([]); 
+
+  // Estado de Inserción SQL
   showInsertionModal = signal(false);
   insertionData = signal<BydModelSqlRow[]>([]);
   
-  // UI State
-  isUploading = signal(false);
   aiAnalysisResult = signal<string | null>(null);
   isAnalyzing = signal(false);
 
-  // --- REVERSE LINKING MODAL STATE ---
+  // --- ESTADO DE VINCULACIÓN INVERSA (Reverse Linking) ---
   showLinkToOrderModal = signal(false);
   selectedMappingForLink = signal<MappingItem | null>(null);
+  
+  // Pestañas del modal
+  activeLinkModalTab = signal<'pending' | 'history'>('pending');
+  
+  // Listas para vinculación
   pendingOrderItems = signal<(ServiceOrderItem & { orderRef: string, customerRef: string })[]>([]);
   filteredPendingItems = signal<(ServiceOrderItem & { orderRef: string, customerRef: string })[]>([]);
   itemSearchTerm = signal('');
   selectedOrderItemsToLink = signal<Set<string>>(new Set());
   isProcessingLink = signal(false);
 
-  // Form (Updated with Series Selection)
+  // Historial
+  usageHistory = signal<{orderRef: string, date: string, description: string, vin: string}[]>([]);
+  isLoadingHistory = signal(false);
+
+  // Formulario de registro manual
   linkForm: FormGroup = this.fb.group({
-    vehicleSeries: ['', Validators.required], // CRITICAL: Force Series Selection
+    vehicleSeries: ['', Validators.required],
     bydCode: ['', [Validators.required, Validators.minLength(3)]],
-    bydType: ['Labor', Validators.required],
+    bydType: ['Labor'],
     daltonCode: ['', [Validators.required, Validators.minLength(3)]],
     description: [''],
+    standardHours: [0],
     mainCategory: ['']
   });
 
   @ViewChild('fileInput') fileInput!: ElementRef<HTMLInputElement>;
 
   constructor() {
-    // Auto-select first series if none selected but data exists
+    // Efecto para auto-seleccionar la primera serie disponible si no hay selección
     effect(() => {
       const groups = this.seriesGroups();
       if (groups.length > 0 && !this.selectedSeries()) {
@@ -135,9 +169,11 @@ export class MappingLinkerComponent {
     });
   }
 
+  // --- ACCIONES DE UI ---
+
   selectSeries(name: string) {
     this.selectedSeries.set(name);
-    this.selectedCategory.set(null); // Reset category when changing series
+    this.selectedCategory.set(null); // Reset category on series change
   }
 
   toggleCategory(cat: string) {
@@ -152,24 +188,27 @@ export class MappingLinkerComponent {
     if (this.linkForm.valid) {
       const formVal = this.linkForm.value;
       
-      // Ensure Vehicle Model matches Series for consistency unless user specifies otherwise (simplified)
       const newItem = {
         ...formVal,
-        vehicleModel: formVal.vehicleSeries 
+        bydType: 'Labor',
+        vehicleModel: formVal.vehicleSeries // Asumimos modelo = serie por defecto
       };
 
       this.store.addMapping(newItem);
       
-      // Reset but keep the series selected for rapid entry
+      // Reset parcial para facilitar entrada rápida consecutiva
       this.linkForm.reset({ 
         bydType: 'Labor', 
         vehicleSeries: formVal.vehicleSeries,
-        mainCategory: formVal.mainCategory 
+        mainCategory: formVal.mainCategory,
+        standardHours: 0
       });
       
       this.notification.show('Mapeo manual agregado correctamente.', 'success');
     }
   }
+
+  // --- LÓGICA DE EXCEL (Parsing) ---
 
   triggerFileInput() {
     this.fileInput.nativeElement.click();
@@ -178,11 +217,16 @@ export class MappingLinkerComponent {
   onFileSelected(event: any) {
     const file = event.target.files[0];
     if (file) {
-      this.processFile(file);
+      this.readExcelAndProcess(file);
     }
   }
 
-  processFile(file: File) {
+  /**
+   * Lee el archivo Excel y lo convierte a JSON.
+   * NOTA: Usa la librería SheetJS (XLSX) de forma síncrona. 
+   * Para archivos muy grandes (>10MB), considerar mover esto a un Web Worker.
+   */
+  readExcelAndProcess(file: File) {
     this.isUploading.set(true);
     const reader = new FileReader();
     
@@ -195,56 +239,10 @@ export class MappingLinkerComponent {
         const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
         if (jsonData.length > 0) {
-           const firstRow = jsonData[0] as any;
-           this.previewHeaders.set(Object.keys(firstRow));
-           this.previewData.set(jsonData);
-        }
-
-        const newMappings: Omit<MappingItem, 'id' | 'status'>[] = [];
-        
-        jsonData.forEach((row: any) => {
-          const bydCode = row['Repair item code']; 
-          
-          if (bydCode) {
-            const desc = row['Repair item name'];
-            const dalton = row['Claim labor hour code'] || bydCode;
-            
-            const catName = String(row['Main category name'] || '').toLowerCase();
-            const isBattery = String(row['Battery pack repair or not']).toLowerCase() === 'yes';
-
-            let type: 'Labor' | 'Repair' = 'Labor';
-            if (isBattery || catName.includes('repair') || desc.toLowerCase().includes('repair')) {
-              type = 'Repair';
-            }
-
-            // Clean Strings
-            const clean = (s: any) => s ? String(s).trim() : '';
-
-            const item: Omit<MappingItem, 'id' | 'status'> = {
-              bydCode: clean(bydCode),
-              bydType: type,
-              daltonCode: clean(dalton),
-              description: clean(desc),
-              
-              vehicleModel: clean(row['Vehicle code']),
-              vehicleSeries: clean(row['Name of project Vehicle Series']),
-              mainCategory: clean(row['Main category name']),
-              subCategory: clean(row['Secondary classification name']),
-              standardHours: row['Standard labor hours'] ? parseFloat(row['Standard labor hours']) : 0,
-              dispatchHours: row['Dispatch labor hours'] ? parseFloat(row['Dispatch labor hours']) : 0,
-              isBatteryRepair: isBattery,
-              modelYear: '2025' 
-            };
-
-            newMappings.push(item);
-          }
-        });
-
-        if (newMappings.length > 0) {
-          this.previewMappings.set(newMappings);
-          this.showPreviewModal.set(true); 
+           const headers = Object.keys(jsonData[0] as object);
+           this.processWithActiveRule(jsonData, headers);
         } else {
-          this.notification.show('No se encontraron columnas válidas (Repair item code).', 'warning');
+           this.notification.show('El archivo Excel parece estar vacío.', 'warning');
         }
         this.isUploading.set(false);
       } catch (error) {
@@ -255,6 +253,106 @@ export class MappingLinkerComponent {
     };
     reader.readAsBinaryString(file);
   }
+
+  /**
+   * Procesa los datos crudos del Excel aplicando la Regla de Negocio Activa.
+   * Detecta inteligentemente qué columna corresponde a qué campo (Heurística).
+   */
+  processWithActiveRule(rows: any[], headers: string[]) {
+    const activeRule = this.rulesService.activeRule();
+    if (!activeRule) {
+      this.notification.show('No hay una regla de negocio activa.', 'error');
+      return;
+    }
+
+    const newMappings: Omit<MappingItem, 'id' | 'status'>[] = [];
+    const clean = (s: any) => s ? String(s).trim() : '';
+
+    // --- DETECCIÓN HEURÍSTICA DE COLUMNAS ---
+    const norm = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    const isForbiddenForCode = (h: string) => {
+       const n = norm(h);
+       return n.includes('vehicle') || n.includes('series') || n.includes('modelo') || n.includes('serie') || n.includes('project');
+    };
+
+    // Candidatos para Labor Code
+    const codeCandidates = ['repairitemcode', 'laborcode', 'labourcode', 'operationcode', 'codigolabor', 'codigojo', 'itemcode', 'codigo'];
+    let colBydCode = headers.find(h => !isForbiddenForCode(h) && codeCandidates.includes(norm(h)));
+    
+    if (!colBydCode) colBydCode = headers.find(h => !isForbiddenForCode(h) && codeCandidates.some(c => norm(h).includes(c)));
+    if (!colBydCode) colBydCode = headers.find(h => !isForbiddenForCode(h) && norm(h).includes('code'));
+
+    // Candidatos para Descripción
+    const descCandidates = ['repairitemname', 'laborname', 'labourname', 'operationname', 'descripcion', 'description', 'nombre', 'name', 'desc'];
+    let colDesc = headers.find(h => h !== colBydCode && descCandidates.includes(norm(h)));
+    if (!colDesc) colDesc = headers.find(h => h !== colBydCode && descCandidates.some(c => norm(h).includes(c)));
+
+    // Fallback: Si detectamos código pero no descripción, usar columna siguiente
+    if (!colDesc && colBydCode) {
+        const codeIdx = headers.indexOf(colBydCode);
+        if (codeIdx + 1 < headers.length) colDesc = headers[codeIdx + 1];
+    }
+
+    // Otras columnas
+    const seriesCandidates = ['projectvehicleseries', 'vehicleseries', 'series', 'serie', 'carline'];
+    let colSeries = headers.find(h => seriesCandidates.some(c => norm(h).includes(c)));
+
+    const modelCandidates = ['vehiclecode', 'vehiclemodel', 'modelo', 'model'];
+    let colModel = headers.find(h => modelCandidates.some(c => norm(h).includes(c)));
+
+    const hoursCandidates = ['standardlaborhours', 'laborhours', 'labourhours', 'horas', 'hours', 'time', 'amount'];
+    let colHours = headers.find(h => hoursCandidates.some(c => norm(h).includes(c)));
+
+    if (!colBydCode) {
+       this.notification.show('No se pudo identificar la columna "Labour Code".', 'error');
+       return;
+    }
+
+    // Transformación de filas
+    rows.forEach((row: any) => {
+      const bydCode = clean(row[colBydCode]);
+      
+      if (bydCode && bydCode.length > 1) {
+        const daltonCode = this.rulesService.calculateDaltonCode(bydCode, activeRule);
+        let desc = colDesc ? clean(row[colDesc]) : '';
+        if (!desc) desc = bydCode; 
+
+        const series = colSeries ? clean(row[colSeries]) : 'GENERICO';
+        const model = colModel ? clean(row[colModel]) : series;
+
+        let hours = 0;
+        if (colHours && row[colHours]) {
+           const hStr = String(row[colHours]).replace(',', '.');
+           hours = parseFloat(hStr) || 0;
+        }
+
+        newMappings.push({
+          bydCode: bydCode,
+          bydType: 'Labor',
+          daltonCode: daltonCode,
+          description: desc,
+          vehicleModel: model,
+          vehicleSeries: series,
+          standardHours: hours,
+          isBatteryRepair: false,
+          modelYear: '2025'
+        });
+      }
+    });
+
+    if (newMappings.length > 0) {
+      this.previewMappings.set(newMappings);
+      this.previewHeaders.set(['bydCode', 'daltonCode', 'description', 'vehicleSeries', 'standardHours']);
+      this.previewData.set(newMappings);
+      this.showPreviewModal.set(true);
+      this.notification.show(`Columnas detectadas: Código=[${colBydCode}]`, 'info', 5000);
+    } else {
+      this.notification.show('No se encontraron registros válidos.', 'warning');
+    }
+  }
+
+  // --- FLUJO DE INSERCIÓN ---
 
   proceedToInsertion() {
     const items = this.previewMappings();
@@ -279,22 +377,20 @@ export class MappingLinkerComponent {
     const payload = this.endpointConfig.buildInsertPayload(sqlRows);
 
     this.resetUploadState();
-    
-    // Async Notification
-    this.notification.show(`Iniciando carga masiva de ${count} registros en segundo plano...`, 'info', 4000);
+    this.notification.show(`Iniciando carga masiva de ${count} registros...`, 'info', 4000);
 
     this.api.executeDynamicInsert(payload).subscribe({
       next: (success) => {
         if (success) {
            this.store.addBatchMappings(items);
-           this.notification.show(`Carga completada: ${count} registros procesados.`, 'success', 6000);
+           this.notification.show(`Carga completada: ${count} registros.`, 'success', 6000);
         } else {
-           this.notification.show("La carga finalizó con advertencias del servidor.", 'warning');
+           this.notification.show("La carga finalizó con advertencias.", 'warning');
         }
       },
       error: (err) => {
         console.error(err);
-        this.notification.show("Error de conexión durante la carga masiva.", 'error');
+        this.notification.show("Error de conexión durante la carga.", 'error');
       }
     });
   }
@@ -305,7 +401,7 @@ export class MappingLinkerComponent {
     this.previewHeaders.set([]);
     this.insertionData.set([]);
     this.showInsertionModal.set(false);
-    this.showPreviewModal.set(false); // Fixed: Properly close the Preview Modal
+    this.showPreviewModal.set(false); 
     if (this.fileInput) {
       this.fileInput.nativeElement.value = '';
     }
@@ -314,6 +410,8 @@ export class MappingLinkerComponent {
   discardUpload() {
     this.resetUploadState();
   }
+
+  // --- GEMINI AI ---
 
   async analyzeWithGemini() {
     if (this.mappings().length === 0) return;
@@ -332,29 +430,42 @@ export class MappingLinkerComponent {
     this.notification.show('Registro eliminado.', 'info', 2000);
   }
 
-  // --- REVERSE LINKING LOGIC ---
+  // --- VINCULACIÓN INVERSA (Desde Catálogo hacia Órdenes) ---
+
   openLinkToOrdersModal(mapping: MappingItem) {
     this.selectedMappingForLink.set(mapping);
     this.showLinkToOrderModal.set(true);
+    this.activeLinkModalTab.set('pending'); 
     this.selectedOrderItemsToLink.set(new Set());
     this.itemSearchTerm.set('');
     this.loadPendingOrderItems();
+    this.loadHistory(mapping.bydCode);
   }
 
   closeLinkModal() {
     this.showLinkToOrderModal.set(false);
     this.selectedMappingForLink.set(null);
+    this.usageHistory.set([]);
+  }
+
+  loadHistory(bydCode: string) {
+    this.isLoadingHistory.set(true);
+    this.api.getBydCodeUsageHistory(bydCode).subscribe(history => {
+      this.usageHistory.set(history);
+      this.isLoadingHistory.set(false);
+    });
   }
 
   loadPendingOrderItems() {
     const end = new Date().toISOString().split('T')[0];
     const start = new Date();
-    start.setDate(start.getDate() - 60);
+    start.setDate(start.getDate() - 60); // Últimos 60 días
     const startStr = start.toISOString().split('T')[0];
 
     this.isProcessingLink.set(true); 
     this.api.getOrders(startStr, end).subscribe(orders => {
       const pending: (ServiceOrderItem & { orderRef: string, customerRef: string })[] = [];
+      
       orders.forEach(order => {
         if (order.status === 'Rejected' || order.status === 'Completed') return;
         order.items.forEach(item => {
@@ -362,7 +473,7 @@ export class MappingLinkerComponent {
             pending.push({
               ...item,
               orderRef: order.orderNumber,
-              customerRef: order.customerRef
+              customerRef: order.customerName
             });
           }
         });
@@ -413,6 +524,7 @@ export class MappingLinkerComponent {
     this.notification.show(`Vinculando ${selectedCodes.length} ítems en segundo plano...`, 'info');
     
     let processedCount = 0;
+    // Procesamiento paralelo
     selectedCodes.forEach(daltonCode => {
       const itemInfo = this.pendingOrderItems().find(p => p.code === daltonCode);
       const desc = itemInfo ? itemInfo.description : 'Vinculación Manual';

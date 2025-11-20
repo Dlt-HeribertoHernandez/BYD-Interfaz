@@ -1,0 +1,158 @@
+
+<div class="flex flex-col h-full gap-6 animate-fade-in">
+  <!-- Header -->
+  <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex justify-between items-center">
+    <div>
+      <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+         <i class="fas fa-brain text-purple-600"></i> Reglas de Negocio
+      </h2>
+      <p class="text-sm text-gray-500 mt-1">Configura cómo se transforman los códigos al importar desde Excel.</p>
+    </div>
+    <button (click)="startNewRule()" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium shadow-lg transition-all text-sm">
+       <i class="fas fa-plus"></i> Nueva Regla
+    </button>
+  </div>
+
+  <div class="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
+     <!-- Left: Rules List -->
+     <div class="lg:w-1/2 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+        <div class="p-4 border-b border-gray-200 bg-gray-50 text-xs font-bold text-gray-500 uppercase">
+           Reglas Disponibles
+        </div>
+        <div class="flex-1 overflow-y-auto p-3 space-y-3">
+           @for (rule of rules(); track rule.id) {
+              <div (click)="editRule(rule)" 
+                 class="p-4 rounded-xl border cursor-pointer transition-all relative group"
+                 [class]="rule.isActive ? 'bg-purple-50 border-purple-200 ring-1 ring-purple-200' : 'bg-white border-gray-200 hover:border-purple-200'">
+                 
+                 <div class="flex justify-between items-start">
+                    <div>
+                       <h3 class="font-bold text-gray-800">{{ rule.name }}</h3>
+                       <p class="text-xs text-gray-500 mt-1">{{ rule.description }}</p>
+                    </div>
+                    @if(rule.isActive) {
+                       <span class="bg-purple-100 text-purple-700 text-[10px] font-bold px-2 py-1 rounded-full border border-purple-200">ACTIVA</span>
+                    } @else {
+                       <button (click)="setActive(rule.id, $event)" class="bg-gray-100 text-gray-500 hover:bg-purple-600 hover:text-white text-[10px] font-bold px-2 py-1 rounded-full transition-colors">
+                          Activar
+                       </button>
+                    }
+                 </div>
+
+                 <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                    <div class="bg-gray-50 px-2 py-1 rounded border border-gray-200 font-mono text-gray-600">
+                       Estrategia: <span class="font-bold text-purple-600">{{ rule.strategy }}</span>
+                    </div>
+                    @if(rule.placeholderCodes && rule.placeholderCodes.length > 0) {
+                       <div class="bg-yellow-50 px-2 py-1 rounded border border-yellow-200 text-yellow-600 font-mono flex items-center gap-1">
+                          <i class="fas fa-tag"></i>
+                          {{ rule.placeholderCodes.join(', ') }}
+                       </div>
+                    }
+                 </div>
+
+                 <button (click)="deleteRule(rule.id, $event)" class="absolute top-3 right-3 text-gray-400 hover:text-red-500 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <i class="fas fa-trash"></i>
+                 </button>
+              </div>
+           }
+        </div>
+     </div>
+
+     <!-- Right: Editor -->
+     <div class="lg:w-1/2 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+        @if (isEditing()) {
+           <div class="p-4 border-b border-gray-200 bg-gray-50 text-xs font-bold text-gray-500 uppercase flex justify-between items-center">
+              <span>{{ selectedRuleId() ? 'Editar Regla' : 'Nueva Regla' }}</span>
+              <button (click)="cancelEdit()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+           </div>
+           
+           <form [formGroup]="ruleForm" (ngSubmit)="saveRule()" class="flex-1 overflow-y-auto p-6 space-y-6">
+              
+              <!-- Basics -->
+              <div>
+                 <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Nombre de la Regla</label>
+                 <input type="text" formControlName="name" class="w-full p-3 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-800 outline-none focus:ring-2 focus:ring-purple-500 transition-all placeholder-gray-400" placeholder="Ej: Campaña MO006">
+              </div>
+              <div>
+                 <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Descripción</label>
+                 <input type="text" formControlName="description" class="w-full p-3 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-800 outline-none focus:ring-2 focus:ring-purple-500 transition-all">
+              </div>
+
+              <!-- Strategy Section -->
+              <div class="bg-purple-50 border border-purple-100 rounded-xl p-5 space-y-4">
+                 <h4 class="text-sm font-bold text-purple-800 flex items-center gap-2">
+                    <i class="fas fa-cogs"></i> Lógica de Carga Masiva (Excel)
+                 </h4>
+
+                 <div class="space-y-2">
+                    <label class="flex items-center gap-3 bg-white p-3 rounded border border-purple-100 cursor-pointer">
+                       <input type="radio" formControlName="strategy" value="MIRROR" class="text-purple-600 focus:ring-purple-500 bg-gray-100 border-gray-300">
+                       <div class="text-sm">
+                          <span class="font-bold text-gray-800">Espejo (Mirror)</span>
+                          <p class="text-xs text-gray-500">Dalton Code = BYD Code</p>
+                       </div>
+                    </label>
+
+                    <label class="flex items-center gap-3 bg-white p-3 rounded border border-purple-100 cursor-pointer">
+                       <input type="radio" formControlName="strategy" value="FIXED" class="text-purple-600 focus:ring-purple-500 bg-gray-100 border-gray-300">
+                       <div class="text-sm flex-1">
+                          <span class="font-bold text-gray-800">Valor Fijo (Fixed)</span>
+                          <p class="text-xs text-gray-500">Dalton Code = Valor Constante</p>
+                       </div>
+                    </label>
+                    
+                    <!-- Conditional Input for Fixed -->
+                    @if (ruleForm.get('strategy')?.value === 'FIXED') {
+                       <div class="ml-8 animate-fade-in">
+                          <label class="text-[10px] font-bold text-purple-600 uppercase">Código Fijo (Ej: MO006)</label>
+                          <input type="text" formControlName="fixedValue" class="w-full p-2 mt-1 bg-white border border-purple-300 rounded text-sm font-bold text-gray-800">
+                       </div>
+                    }
+
+                    <label class="flex items-center gap-3 bg-white p-3 rounded border border-purple-100 cursor-pointer">
+                       <input type="radio" formControlName="strategy" value="PREFIX" class="text-purple-600 focus:ring-purple-500 bg-gray-100 border-gray-300">
+                       <div class="text-sm flex-1">
+                          <span class="font-bold text-gray-800">Prefijo</span>
+                          <p class="text-xs text-gray-500">Dalton Code = Prefijo + BYD Code</p>
+                       </div>
+                    </label>
+                    
+                    <!-- Conditional Input for Prefix -->
+                     @if (ruleForm.get('strategy')?.value === 'PREFIX') {
+                       <div class="ml-8 animate-fade-in">
+                          <label class="text-[10px] font-bold text-purple-600 uppercase">Prefijo (Ej: BYD-)</label>
+                          <input type="text" formControlName="prefixValue" class="w-full p-2 mt-1 bg-white border border-purple-300 rounded text-sm font-bold text-gray-800">
+                       </div>
+                    }
+                 </div>
+              </div>
+
+              <!-- Wildcard Codes Section -->
+              <div class="bg-yellow-50 border border-yellow-100 rounded-xl p-5 space-y-2">
+                 <h4 class="text-sm font-bold text-yellow-700 flex items-center gap-2">
+                    <i class="fas fa-filter"></i> Definición de Ítems de Labor (Filtro)
+                 </h4>
+                 <p class="text-xs text-yellow-600">Define los códigos (como <strong>MO006</strong>) que identifican la Mano de Obra. <br> <strong>Nota:</strong> Al visualizar una orden, el sistema <u>ocultará</u> cualquier ítem que NO esté en esta lista (ej. Refacciones).</p>
+                 
+                 <div class="mt-2">
+                    <label class="block text-[10px] font-bold text-yellow-600 uppercase mb-1">Lista de Códigos (Separados por coma)</label>
+                    <input type="text" formControlName="placeholderCodes" placeholder="MO006, GENERICO, SERVICIO"
+                       class="w-full p-3 bg-white border border-yellow-300 rounded-lg text-sm font-bold text-gray-800 outline-none focus:ring-2 focus:ring-yellow-500 placeholder-gray-400">
+                 </div>
+              </div>
+
+              <div class="pt-4 border-t border-gray-200 flex justify-end gap-3">
+                 <button type="button" (click)="cancelEdit()" class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg font-medium hover:bg-gray-200">Cancelar</button>
+                 <button type="submit" [disabled]="ruleForm.invalid" class="px-6 py-2 bg-purple-600 text-white rounded-lg font-bold shadow hover:bg-purple-700 disabled:opacity-50">Guardar Regla</button>
+              </div>
+           </form>
+        } @else {
+           <div class="flex-1 flex flex-col items-center justify-center text-gray-400">
+              <i class="fas fa-arrow-left text-2xl mb-2"></i>
+              <p>Selecciona una regla para editar</p>
+           </div>
+        }
+     </div>
+  </div>
+</div>

@@ -5,6 +5,7 @@ import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from './services/api.service';
 import { NotificationService } from './services/notification.service';
+import { ThemeService } from './services/theme.service';
 import { Dealer } from './models/app.types';
 
 @Component({
@@ -16,8 +17,11 @@ import { Dealer } from './models/app.types';
 export class AppComponent {
   apiService = inject(ApiService);
   notificationService = inject(NotificationService);
+  themeService = inject(ThemeService);
 
   dealers = signal<Dealer[]>([]);
+  isContextSwitching = signal(false); // UI State for the loading overlay
+  targetDealerName = signal('');
 
   constructor() {
     // Effect to reload dealers when mode changes (Demo <-> Live)
@@ -45,7 +49,23 @@ export class AppComponent {
 
   onDealerChange(event: Event) {
     const select = event.target as HTMLSelectElement;
-    this.apiService.selectedDealerCode.set(select.value);
+    const newCode = select.value;
+    const dealerObj = this.dealers().find(d => d.dealerCode === newCode);
+    const dealerName = dealerObj ? dealerObj.dealerName : newCode;
+
+    // 1. Activate Loading State
+    this.isContextSwitching.set(true);
+    this.targetDealerName.set(dealerName);
+    
+    // 2. Update the Global Signal immediately so data starts fetching in background
+    this.apiService.selectedDealerCode.set(newCode);
+
+    // 3. Keep the overlay for at least 800ms to ensure user sees the transition 
+    // and data has time to clear/reload in child components
+    setTimeout(() => {
+      this.isContextSwitching.set(false);
+      this.notificationService.show(`Contexto actualizado: ${dealerName}`, 'success');
+    }, 800);
   }
 
   removeNotification(id: string) {

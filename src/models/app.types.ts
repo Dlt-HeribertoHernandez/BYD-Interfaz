@@ -1,97 +1,156 @@
 
+/**
+ * Definición principal de tipos para la aplicación.
+ * Se utiliza TypeScript estricto para garantizar la integridad de los datos
+ * a través de toda la aplicación.
+ */
+
+/**
+ * Representa un ítem en el catálogo maestro de mapeo (Excel cargado).
+ * Vincula un código BYD (Fábrica) con un código interno Dalton (DMS).
+ */
 export interface MappingItem {
   id: string;
-  bydCode: string; // 'Repair item code'
+  /** Código proporcionado por BYD (ej. 'Repair item code') */
+  bydCode: string;
+  /** Tipo de operación definido por fábrica */
   bydType: 'Labor' | 'Repair';
-  daltonCode: string; // 'Claim labor hour code' or mapped manually
-  description?: string; // 'Repair item name'
+  /** Código interno en el DMS (ej. 'Claim labor hour code') o mapeado manual */
+  daltonCode: string;
+  /** Descripción o nombre de la operación */
+  description?: string;
   
-  // New Fields from Excel
-  vehicleModel?: string; // 'Vehicle code' e.g., 'SONG PLUS DMI'
+  // Campos adicionales provenientes de la carga masiva (Excel)
+  vehicleModel?: string;  // 'Vehicle code' ej. 'SONG PLUS DMI'
   vehicleSeries?: string; // 'Name of project Vehicle Series'
-  mainCategory?: string; // 'Main category name'
-  subCategory?: string; // 'Secondary classification name'
-  standardHours?: number; // 'Standard labor hours'
-  dispatchHours?: number; // 'Dispatch labor hours'
-  isBatteryRepair?: boolean; // 'Battery pack repair or not'
-  modelYear?: string; // Placeholder for year filtering
+  mainCategory?: string;  // Categoría principal para filtros
+  subCategory?: string;   // Clasificación secundaria
+  standardHours?: number; // Horas estándar de labor
+  dispatchHours?: number; // Horas despacho
+  isBatteryRepair?: boolean; // Bandera para reparaciones de alto voltaje
+  modelYear?: string;     // Año modelo para filtrado preciso
 
+  /** Estado de la vinculación en el sistema */
   status: 'Pending' | 'Linked' | 'Error';
+  /** Nivel de confianza si fue sugerido por IA (0-100) */
   confidence?: number;
 }
 
+/** Estados posibles de una Orden de Servicio */
 export type OrderStatus = 'Pending' | 'Transmitted' | 'In Process' | 'Rejected' | 'Completed' | 'Error';
 
-// --- NEW: Business Rule Definitions for Order Types ---
+/**
+ * Configuración de Estrategia para Tipos de Orden.
+ * Define cómo se comporta la UI/UX para diferentes tipos de documentos del DMS.
+ */
 export interface OrderTypeConfig {
-  code: string;       // The raw DMS DocType (e.g., 'OS', 'WAR', 'INT')
-  label: string;      // Display Name (e.g., 'Repair Order')
-  icon: string;       // FontAwesome icon class
-  colorClass: string; // Tailwind base color class (e.g., 'blue', 'purple')
+  code: string;       // El DocType crudo del DMS (ej. 'OS', 'WAR', 'INT')
+  label: string;      // Nombre visual para el usuario
+  icon: string;       // Clase de icono FontAwesome
+  colorClass: string; // Clase base de color Tailwind (ej. 'blue', 'purple')
   rules: {
-    allowLinking: boolean;      // Can user link items manually?
-    autoProcessing: boolean;    // Can be auto-processed?
-    requiresApproval: boolean;  // Needs manager approval?
-    visibleInList: boolean;     // Show in main grid?
+    allowLinking: boolean;      // ¿Permite vincular items manualmente?
+    autoProcessing: boolean;    // ¿Puede procesarse automáticamente?
+    requiresApproval: boolean;  // ¿Requiere aprobación gerencial?
+    visibleInList: boolean;     // ¿Se muestra en la lista principal?
   };
 }
 
+/**
+ * Regla de Negocio para la importación y transformación de datos.
+ */
+export interface BusinessRule {
+  id: string;
+  name: string;         // ej. "Carga General" o "Campaña MO006"
+  description?: string;
+  isActive: boolean;    // Solo una regla activa a la vez se recomienda
+  
+  // Estrategia para calcular el Dalton Code a partir del BYD Code
+  strategy: 'MIRROR' | 'FIXED' | 'PREFIX'; 
+  fixedValue?: string;  // Usado si strategy === 'FIXED' (ej. "MO006")
+  prefixValue?: string; // Usado si strategy === 'PREFIX' (ej. "BYD-")
+  
+  // Códigos Comodín (Placeholder Codes)
+  // Son códigos genéricos del DMS (ej. MO006) que requieren desglose manual obligatoriamente.
+  placeholderCodes: string[]; 
+  
+  // Valores por defecto
+  defaultCategory: string;
+  defaultHours: number;
+}
+
+/**
+ * Item individual dentro de una Orden de Servicio.
+ */
 export interface ServiceOrderItem {
-  code: string; // Cod_Art
-  description: string; // Computed or joined description
+  code: string; // Cod_Art (DMS)
+  description: string; // Descripción calculada o concatenada
   quantity: number; // CtdArt_DDor
   unitPrice?: number; // PrecLst_DDor
   total?: number; // SubTot_DOri
+  
+  /** Indica si este ítem ya fue vinculado a un código de fábrica */
   isLinked: boolean;
   linkedBydCode?: string;
+  linkedBydDescription?: string; // Descripción oficial de planta guardada al vincular
 }
 
+/**
+ * Representa una Orden de Servicio completa (Encabezado + Detalle).
+ */
 export interface ServiceOrder {
-  id: string; // Internal ID
-  // Dalton Keys
-  branchCode: string; // Cod_Sucu (Now mapped to dealerCode)
-  docType: string; // TpDoc_DOri (Matches OrderTypeConfig.code)
-  orderNumber: string; // FolDoc_DOri (e.g., XCL00435)
+  id: string; // ID Interno o UUID
   
-  date: string; // FDoc_DOri
-  customerCode: string; // Cod_Cte
-  customerName: string; // Resolved name
-  vin: string; // NumSer_Vehi (e.g., LGXC74C48S0147557)
-  modelCodeRaw: string; // e.g., SOPL25BY
-  modelDescRaw: string; // e.g., SONG PLUS 2025 BC DM-I
-  year: string; // e.g., 2025
+  // Llaves y Referencias DMS
+  branchCode: string; // Cod_Sucu (Mapeado a dealerCode)
+  docType: string;    // TpDoc_DOri (Coincide con OrderTypeConfig.code)
+  orderNumber: string;// FolDoc_DOri (ej. XCL00435)
   
-  totalAmount: number; // ImpTot_DOri
+  date: string;       // Fecha Documento
+  customerCode: string; 
+  customerName: string; 
+  vin: string;        // NumSer_Vehi (Critico para garantías)
+  modelCodeRaw: string; // Código Modelo DMS
+  modelDescRaw: string; // Descripción Modelo DMS
+  year: string; 
+  
+  totalAmount: number; 
   
   status: OrderStatus; 
-  rawStatusChar?: string;
+  rawStatusChar?: string; // Estado crudo de la BD si aplica
 
   items: ServiceOrderItem[];
-  logs: OrderLog[];
+  logs: OrderLog[]; // Historial de errores/eventos locales
 }
 
+/** Log ligero dentro de la orden */
 export interface OrderLog {
   timestamp: string;
   message: string;
   status: OrderStatus;
 }
 
-// --- Integration Log (New Table) ---
+/**
+ * Log de Integración (Tabla LogIntegracion).
+ * Registra intentos de comunicación con la API de Fábrica/Planta.
+ */
 export interface IntegrationLog {
   id: string;
   vchOrdenServicio: string; // XCL00435
-  vchLog: string; // 1 -> 190802
-  dtmcreated: string; // 19/11/2025
-  txtDataJson: string; // JSON payload sent
-  vchMessage: string; // "success":true,"message":"labour code and vehicle series not match"
+  vchLog: string;           // ID correlativo externo
+  dtmcreated: string;       // Fecha creación
+  txtDataJson: string;      // Payload JSON enviado
+  vchMessage: string;       // Respuesta del servidor (ej. error messages)
   VIN: string; 
-  labourcode: string; // WSA3HAC02101GH00
-  Cod_TpAut: string; // SOPL25BD
-  Desc_TpAut: string; // SONG PLUS 2025 BL
-  isError: boolean; // derived from vchMessage
+  labourcode: string; 
+  Cod_TpAut: string; 
+  Desc_TpAut: string; 
+  isError: boolean;         // Flag calculado basado en vchMessage
 }
 
-// --- AI Types ---
+/**
+ * Respuesta de sugerencia de la IA (Gemini).
+ */
 export interface AiSuggestion {
   code: string;
   type: 'Labor' | 'Repair';
@@ -100,19 +159,22 @@ export interface AiSuggestion {
   vehicleSeriesMatch?: string;
 }
 
-// --- Dealer Context Support ---
-
+/**
+ * Contexto de la Agencia (Dealer).
+ */
 export interface Dealer {
   intID: number;
-  dealerCode: string; // e.g. MEX022429
-  dealerName: string; // e.g. BYD Carretera 57-Dalton
+  dealerCode: string; // ej. MEX022429
+  dealerName: string; // ej. BYD Carretera 57-Dalton
   appId: string;
   dealerKey: string;
   vchRepairStoreCode: string;
 }
 
-// --- Config Module Types ---
-
+/**
+ * Configuración de Endpoints Dinámicos.
+ * Permite cambiar URLs y estructuras JSON sin recompilar.
+ */
 export interface EndpointConfiguration {
   id: string;
   name: string;        
@@ -121,18 +183,18 @@ export interface EndpointConfiguration {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   targetTable?: string; 
   
-  // Auth & Headers
+  // Autenticación y Cabeceras
   apiKey?: string;
   headers?: string; 
   
-  // The JSON Template structure (stringified)
+  // Plantilla de Estructura JSON (Stringified)
   jsonStructure: string; 
   
   isActive: boolean;
   lastModified: string;
 }
 
-// --- UI Types ---
+/** Notificación tipo Toast para la UI */
 export interface ToastNotification {
   id: string;
   message: string;

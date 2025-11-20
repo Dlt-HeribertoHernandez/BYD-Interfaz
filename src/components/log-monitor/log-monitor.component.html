@@ -2,10 +2,10 @@
 <div class="flex flex-col h-full gap-6 animate-fade-in">
   
   <!-- Header & Filter Bar -->
-  <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between items-end md:items-center gap-4">
+  <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col md:flex-row justify-between items-end md:items-center gap-4 transition-colors">
     <div>
-      <h2 class="text-xl font-bold text-gray-800">Monitor de Integración</h2>
-      <p class="text-sm text-gray-500 mt-1">Visualización de transacciones fallidas y logs del sistema.</p>
+      <h2 class="text-xl font-bold text-gray-800 dark:text-white">Monitor de Integración</h2>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Visualización de transacciones fallidas y logs del sistema.</p>
     </div>
 
     <!-- Filter Toolbar -->
@@ -16,64 +16,64 @@
          <i class="fas fa-search absolute left-3 top-3 text-gray-400 text-xs"></i>
          <input type="text" [ngModel]="searchTerm()" (ngModelChange)="searchTerm.set($event)" 
             placeholder="Buscar (Orden, VIN, Error)..."
-            class="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+            class="w-full pl-9 pr-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:bg-white dark:focus:bg-gray-600 focus:ring-2 focus:ring-blue-500 outline-none transition-all text-gray-800 dark:text-gray-200 placeholder-gray-400">
       </div>
 
       <!-- Error Toggle -->
-      <label class="flex items-center gap-2 cursor-pointer bg-gray-50 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors select-none">
+      <label class="flex items-center gap-2 cursor-pointer bg-gray-100 dark:bg-gray-700 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors select-none">
          <input type="checkbox" [ngModel]="showErrorsOnly()" (ngModelChange)="showErrorsOnly.set($event)" class="text-red-600 focus:ring-red-500 rounded border-gray-300">
-         <span class="text-xs font-bold text-gray-600">Solo Errores</span>
+         <span class="text-xs font-bold text-gray-600 dark:text-gray-300">Solo Errores</span>
       </label>
 
-      <button (click)="loadLogs()" class="p-2 bg-gray-900 text-white hover:bg-black rounded-lg shadow transition-colors" title="Recargar">
+      <button (click)="loadLogs()" class="p-2 bg-gray-800 hover:bg-black dark:bg-gray-700 dark:hover:bg-gray-600 text-white border border-gray-700 dark:border-gray-600 rounded-lg shadow transition-colors" title="Recargar">
         <i class="fas fa-sync-alt" [class.fa-spin]="isLoading()"></i>
       </button>
     </div>
   </div>
 
   <!-- Grid -->
-  <div class="bg-white rounded-xl shadow-sm border border-gray-100 flex-1 overflow-hidden flex flex-col">
+  <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex-1 overflow-hidden flex flex-col transition-colors">
     <div class="flex-1 overflow-auto">
        <table class="w-full text-left border-collapse min-w-[1200px]">
-         <thead class="sticky top-0 bg-gray-100 z-10">
-           <tr class="text-[11px] font-bold text-gray-600 uppercase border-b border-gray-300">
-             <th class="px-4 py-3 whitespace-nowrap border-r border-gray-200">vchOrdenServicio</th>
-             <th class="px-4 py-3 whitespace-nowrap border-r border-gray-200">vchLog</th>
-             <th class="px-4 py-3 whitespace-nowrap border-r border-gray-200">dtmcreated</th>
-             <th class="px-4 py-3 border-r border-gray-200 w-64">vchMessage (Error)</th>
-             <th class="px-4 py-3 whitespace-nowrap border-r border-gray-200">VIN</th>
-             <th class="px-4 py-3 whitespace-nowrap border-r border-gray-200">labourcode</th>
-             <th class="px-4 py-3 whitespace-nowrap border-r border-gray-200">Cod_TpAut</th>
+         <thead class="sticky top-0 bg-gray-50 dark:bg-gray-700 z-10 shadow-sm">
+           <tr class="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-700">
+             <th class="px-4 py-3 whitespace-nowrap border-r border-gray-100 dark:border-gray-700">vchOrdenServicio</th>
+             <th class="px-4 py-3 whitespace-nowrap border-r border-gray-100 dark:border-gray-700">vchLog</th>
+             <th class="px-4 py-3 whitespace-nowrap border-r border-gray-100 dark:border-gray-700">dtmcreated</th>
+             <th class="px-4 py-3 border-r border-gray-100 dark:border-gray-700 w-64">vchMessage (Error)</th>
+             <th class="px-4 py-3 whitespace-nowrap border-r border-gray-100 dark:border-gray-700">VIN</th>
+             <th class="px-4 py-3 whitespace-nowrap border-r border-gray-100 dark:border-gray-700">labourcode</th>
+             <th class="px-4 py-3 whitespace-nowrap border-r border-gray-100 dark:border-gray-700">Cod_TpAut</th>
              <th class="px-4 py-3 whitespace-nowrap">Desc_TpAut</th>
            </tr>
          </thead>
-         <tbody class="text-xs divide-y divide-gray-200 font-mono">
+         <tbody class="text-xs divide-y divide-gray-100 dark:divide-gray-700 font-mono">
            @for (row of filteredLogs(); track row.id) {
-             <tr class="hover:bg-gray-50 transition-colors">
-               <td class="px-4 py-2 border-r border-gray-100 font-bold text-blue-700">
+             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+               <td class="px-4 py-2 border-r border-gray-100 dark:border-gray-700 font-bold text-blue-600 dark:text-blue-400">
                   <!-- Highlight search match -->
                   {{ row.vchOrdenServicio }}
                </td>
-               <td class="px-4 py-2 border-r border-gray-100 text-gray-500">{{ row.vchLog }}</td>
-               <td class="px-4 py-2 border-r border-gray-100 whitespace-nowrap">{{ row.dtmcreated }}</td>
+               <td class="px-4 py-2 border-r border-gray-100 dark:border-gray-700 text-gray-500 dark:text-gray-400">{{ row.vchLog }}</td>
+               <td class="px-4 py-2 border-r border-gray-100 dark:border-gray-700 whitespace-nowrap text-gray-500 dark:text-gray-400">{{ row.dtmcreated }}</td>
                
                <!-- Message Column -->
-               <td class="px-4 py-2 border-r border-gray-100 text-red-600 break-words max-w-xs">
+               <td class="px-4 py-2 border-r border-gray-100 dark:border-gray-700 text-red-600 dark:text-red-400 break-words max-w-xs">
                  <div class="flex items-start gap-2">
                    @if (row.isError) { <i class="fas fa-times-circle mt-0.5 shrink-0"></i> }
                    <span>{{ row.vchMessage }}</span>
                  </div>
                </td>
                
-               <td class="px-4 py-2 border-r border-gray-100 font-bold text-gray-800">{{ row.VIN }}</td>
-               <td class="px-4 py-2 border-r border-gray-100 text-purple-700 font-bold">{{ row.labourcode }}</td>
-               <td class="px-4 py-2 border-r border-gray-100">{{ row.Cod_TpAut }}</td>
-               <td class="px-4 py-2 text-gray-600">{{ row.Desc_TpAut }}</td>
+               <td class="px-4 py-2 border-r border-gray-100 dark:border-gray-700 font-bold text-gray-700 dark:text-gray-300">{{ row.VIN }}</td>
+               <td class="px-4 py-2 border-r border-gray-100 dark:border-gray-700 text-purple-600 dark:text-purple-400 font-bold">{{ row.labourcode }}</td>
+               <td class="px-4 py-2 border-r border-gray-100 dark:border-gray-700 text-gray-600 dark:text-gray-400">{{ row.Cod_TpAut }}</td>
+               <td class="px-4 py-2 text-gray-500 dark:text-gray-400">{{ row.Desc_TpAut }}</td>
              </tr>
            }
            @if (filteredLogs().length === 0 && !isLoading()) {
              <tr>
-               <td colspan="8" class="px-6 py-12 text-center text-gray-400">
+               <td colspan="8" class="px-6 py-12 text-center text-gray-400 dark:text-gray-500">
                   <div class="text-3xl opacity-20 mb-2"><i class="fas fa-filter"></i></div>
                   <p>No se encontraron registros con los filtros actuales.</p>
                </td>
@@ -82,7 +82,7 @@
          </tbody>
        </table>
     </div>
-    <div class="p-2 border-t border-gray-200 bg-gray-50 text-[10px] text-gray-400 text-right flex justify-between px-4">
+    <div class="p-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700 text-[10px] text-gray-500 dark:text-gray-400 text-right flex justify-between px-4">
        <span>Total Logs: {{ logs().length }}</span>
        <span>Mostrando: {{ filteredLogs().length }}</span>
     </div>

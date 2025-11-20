@@ -1,15 +1,20 @@
 
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } from '@angular/forms';
 import { EndpointConfigService } from '../../services/endpoint-config.service';
 import { EndpointConfiguration } from '../../models/app.types';
 
+/**
+ * Componente para la gestión de configuraciones de endpoints dinámicos.
+ * Permite editar URLs, Headers y Payloads JSON sin modificar código fuente.
+ */
 @Component({
   selector: 'app-endpoint-config',
   standalone: true,
   imports: [CommonModule, FormsModule, ReactiveFormsModule],
-  templateUrl: './endpoint-config.component.html'
+  templateUrl: './endpoint-config.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class EndpointConfigComponent {
   private configService = inject(EndpointConfigService);
@@ -17,19 +22,22 @@ export class EndpointConfigComponent {
 
   configs = this.configService.configurations;
   
-  // UI State
+  // Estados de UI
   isEditing = signal(false);
   selectedConfigId = signal<string | null>(null);
+  
+  // Estados de Preview
+  showPreviewModal = signal(false);
+  previewContent = signal('');
 
-  // Form
   configForm: FormGroup = this.fb.group({
     name: ['', Validators.required],
     description: [''],
     url: ['', [Validators.required, Validators.pattern('https?://.+')]],
     method: ['POST', Validators.required],
     targetTable: [''],
-    apiKey: [''], // New
-    headers: ['{\n  "Content-Type": "application/json"\n}'], // New
+    apiKey: [''],
+    headers: ['{\n  "Content-Type": "application/json"\n}'],
     jsonStructure: ['{\n  \n}', Validators.required],
     isActive: [true]
   });
@@ -72,10 +80,8 @@ export class EndpointConfigComponent {
     const formValue = this.configForm.value;
 
     if (this.selectedConfigId()) {
-      // Update
       this.configService.updateConfig(this.selectedConfigId()!, formValue);
     } else {
-      // Create
       this.configService.addConfig(formValue);
     }
 
@@ -107,5 +113,39 @@ export class EndpointConfigComponent {
     } catch (e) {
       alert('JSON inválido, no se puede formatear.');
     }
+  }
+
+  /**
+   * Genera una simulación del JSON final reemplazando variables de plantilla
+   * con datos ficticios.
+   */
+  generatePreview() {
+    let raw = this.configForm.get('jsonStructure')?.value || '';
+    
+    // Reemplazo de variables de plantilla
+    raw = raw.replace(/{{TIMESTAMP}}/g, new Date().toISOString());
+    raw = raw.replace(/{{CONTEXT_DEALER}}/g, "MEX022429");
+    raw = raw.replace(/{{STRING}}/g, "SAMPLE_TEXT");
+
+    const sampleArray = JSON.stringify([
+      { "IdModeloVehiculo": 1, "Nombre": "SONG PLUS", "Codigo": "WSA3...", "Descripcion": "Sample Labor" },
+      { "IdModeloVehiculo": 2, "Nombre": "HAN EV", "Codigo": "BAT_01", "Descripcion": "Battery Check" }
+    ]);
+    
+    raw = raw.replace(/{{ARRAY_DATA}}/g, sampleArray);
+    raw = raw.replace(/"{{ARRAY_DATA}}"/g, sampleArray); 
+
+    try {
+       const obj = JSON.parse(raw);
+       this.previewContent.set(JSON.stringify(obj, null, 2));
+    } catch(e) {
+       this.previewContent.set(raw + '\n\n// Nota: La vista previa generó un JSON inválido o contiene errores de sintaxis.');
+    }
+    
+    this.showPreviewModal.set(true);
+  }
+
+  closePreview() {
+    this.showPreviewModal.set(false);
   }
 }

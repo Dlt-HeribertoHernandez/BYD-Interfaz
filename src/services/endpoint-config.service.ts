@@ -96,6 +96,17 @@ export class EndpointConfigService {
       isActive: true,
       lastModified: new Date().toISOString(),
       jsonStructure: '// GET Request params: ?startDate=...&endDate=...'
+    },
+    {
+      id: '6',
+      name: 'Obtener Logs', // Key for lookup
+      description: 'Consulta los logs de integración de la base de datos.',
+      url: 'https://api.daltonsoft-integration.com/api/logs',
+      method: 'GET',
+      targetTable: '[dbo].[LogIntegracion]',
+      isActive: true,
+      lastModified: new Date().toISOString(),
+      jsonStructure: '// GET Request params: ?startDate=...&endDate=...'
     }
   ];
 

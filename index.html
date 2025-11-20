@@ -5,28 +5,62 @@
     <title>BYD-Dalton Integrator</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              gray: {
+                750: '#2d3748',
+                850: '#1a202c',
+                950: '#0d1117',
+              }
+            }
+          }
+        }
+      }
+    </script>
     <!-- SheetJS for Excel processing -->
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
       body {
         font-family: 'Inter', sans-serif;
-        background-color: #f3f4f6;
+        background-color: #f3f4f6; /* Gray 100 */
+        color: #1f2937; /* Gray 800 */
       }
-      /* Custom scrollbar */
+      /* Dark Mode Body override managed by Tailwind class on html, but keeping base just in case */
+      html.dark body {
+        background-color: #111827; /* Gray 900 */
+        color: #f3f4f6; /* Gray 100 */
+      }
+
+      /* Custom scrollbar Light Mode */
       ::-webkit-scrollbar {
         width: 8px;
         height: 8px;
       }
       ::-webkit-scrollbar-track {
-        background: #f1f1f1; 
+        background: #f1f1f1;
       }
       ::-webkit-scrollbar-thumb {
-        background: #c1c1c1; 
+        background: #c1c1c1;
         border-radius: 4px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #a8a8a8; 
+        background: #a8a8a8;
+      }
+      
+      /* Dark scrollbar */
+      html.dark ::-webkit-scrollbar-track {
+        background: #1f2937;
+      }
+      html.dark ::-webkit-scrollbar-thumb {
+        background: #4b5563;
+      }
+      html.dark ::-webkit-scrollbar-thumb:hover {
+        background: #6b7280;
       }
     </style>
   <script type="importmap">
