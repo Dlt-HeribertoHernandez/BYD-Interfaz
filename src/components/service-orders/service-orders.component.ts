@@ -98,10 +98,11 @@ export class ServiceOrdersComponent {
    * Transforma una lista plana de órdenes en grupos jerárquicos basados en Modelo y Año.
    * Esto permite al usuario procesar "Todos los Song Plus 2025" de una sola vez.
    * 
-   * Reglas de Negocio aplicadas aquí:
-   * 1. Se ignoran órdenes ya transmitidas.
-   * 2. Se aplica normalización de nombres de modelo (ej. separar modelo de versión).
-   * 3. Se filtran items irrelevantes usando BusinessRulesService.
+   * Arquitectura (Strategy Pattern implícito):
+   * 1. Filtrado Previo: Se ignoran órdenes ya transmitidas.
+   * 2. Normalización: Extrae y limpia nombres de modelo para agrupar variaciones.
+   * 3. Whitelist (Reglas de Negocio): Filtra items irrelevantes (ej. items administrativos)
+   *    usando BusinessRulesService.
    */
   pendingItemsByModel = computed<ModelGroup[]>(() => {
     const groups = new Map<string, ModelGroup>();
@@ -111,11 +112,11 @@ export class ServiceOrdersComponent {
 
       // Normalización: Extraer nombre base del modelo
       // Ej: "SONG PLUS 2025 BC DM-I..." -> "SONG PLUS"
-      const modelName = (order.modelDescRaw || order.modelCodeRaw || 'GENERICO').split(' ')[0] + ' ' + (order.modelDescRaw || '').split(' ')[1]; 
+      const modelName = (order.modelDescRaw || order.modelCodeRaw || 'GENERICO').split(' ')[0] + ' ' + ((order.modelDescRaw || '').split(' ')[1] || ''); 
       const year = order.year || 'N/A';
       
       // Generar ID único de grupo
-      const groupId = `${modelName}|${year}`;
+      const groupId = `${modelName.trim()}|${year}`;
 
       if (!groups.has(groupId)) {
         groups.set(groupId, { 

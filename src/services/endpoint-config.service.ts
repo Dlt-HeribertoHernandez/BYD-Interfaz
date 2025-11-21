@@ -14,7 +14,7 @@ export class EndpointConfigService {
   private http = inject(HttpClient);
   private notification = inject(NotificationService);
   
-  // URL endpoint exacto solicitado
+  // URL endpoint exacto solicitado (Gateway de configuración)
   private readonly API_URL = '/api/ApiConfigs'; 
   
   // Estado Global
@@ -38,10 +38,26 @@ export class EndpointConfigService {
       isActive: true,
       lastModified: new Date().toISOString(),
       jsonStructure: '{}'
+    },
+    {
+      id: '2',
+      name: 'Vincular Batch',
+      description: 'Endpoint optimizado para vinculación masiva.',
+      basePathProd: 'https://api.daltonsoft.com/v1',
+      basePathQa: 'https://qa-api.daltonsoft.com/v1',
+      basePathDev: 'https://dev-api.daltonsoft.com/v1',
+      basePathLocal: 'http://localhost:5000',
+      resource: '/link-batch',
+      headerKey: 'X-API-Key',
+      method: 'POST',
+      isActive: true,
+      lastModified: new Date().toISOString(),
+      jsonStructure: '{}'
     }
   ];
 
   // --- COMPUTED: Resuelve la URL final según el entorno seleccionado ---
+  // Esta es la fuente de verdad para ApiService.computedUrl
   readonly configurations = computed(() => {
     const env = this.currentEnvironment();
     return this.configsSignal().map(config => {
@@ -65,8 +81,10 @@ export class EndpointConfigService {
           break;
       }
       
+      // Fallback a Prod si el entorno elegido está vacío
       if(!base) base = config.basePathProd || '';
       
+      // Normalización de slashes
       const cleanBase = base.replace(/\/$/, '');
       const cleanRes = config.resource.startsWith('/') ? config.resource : '/' + config.resource;
       
@@ -97,29 +115,29 @@ export class EndpointConfigService {
       this.http.get<any[]>(this.API_URL).subscribe({
         next: (data) => {
            if (Array.isArray(data)) {
-             // Mapear de vuelta de Hungarian a CamelCase para uso interno
+             // Mapeo estricto de Hungarian a CamelCase
              const mapped = data.map(d => ({
                 id: d.id || crypto.randomUUID(),
-                name: d.vchNombre,
-                description: d.vchDescripcion,
-                basePathProd: d.vchBasePathProd,
-                basePathQa: d.vchBasePathQa,
-                basePathDev: d.vchBasePathDev,
-                basePathLocal: d.vchBasePathLocal,
-                resource: d.vchResource,
-                headerKey: d.vchHeaderKey,
-                apiKeyProd: d.vchApiKeyProd,
-                apiKeyQa: d.vchApiKeyQa,
+                name: d.vchNombre || 'Sin Nombre',
+                description: d.vchDescripcion || '',
+                basePathProd: d.vchBasePathProd || '',
+                basePathQa: d.vchBasePathQa || '',
+                basePathDev: d.vchBasePathDev || '',
+                basePathLocal: d.vchBasePathLocal || '',
+                resource: d.vchResource || '/',
+                headerKey: d.vchHeaderKey || 'X-API-Key',
+                apiKeyProd: d.vchApiKeyProd || '',
+                apiKeyQa: d.vchApiKeyQa || '',
                 isActive: d.bitActivo !== undefined ? d.bitActivo : true,
-                method: 'POST', // Default safe ya que no viene en la respuesta
-                jsonStructure: '{}', // Default safe
+                method: 'POST', // Default safe
+                jsonStructure: '{}',
                 lastModified: d.dtCreatedAt || new Date().toISOString()
              } as EndpointConfiguration));
              this.configsSignal.set(mapped);
            }
         },
         error: (err) => {
-           console.warn('No se pudieron cargar configs de la API, usando fallback.', err);
+           console.warn('No se pudieron cargar configs de la API (Probablemente offline), usando fallback.', err);
            this.configsSignal.set(this.initialConfigs);
         }
       });
@@ -136,24 +154,18 @@ export class EndpointConfigService {
    */
   createConfig(config: Omit<EndpointConfiguration, 'id' | 'lastModified' | 'computedUrl'>): Observable<any> {
     
-    // Payload estricto según especificación
+    // Payload estricto según especificación de BD SQL
     const payload = {
       vchNombre: config.name,
       vchDescripcion: config.description,
-      
-      // Rutas por entorno
       vchBasePathProd: config.basePathProd,
       vchBasePathQa: config.basePathQa,
       vchBasePathDev: config.basePathDev,
       vchBasePathLocal: config.basePathLocal,
-      
-      // Recurso y Seguridad
       vchResource: config.resource,
       vchApiKeyProd: config.apiKeyProd,
       vchApiKeyQa: config.apiKeyQa,
       vchHeaderKey: config.headerKey,
-      
-      // Campo booleano para estado
       bitActivo: config.isActive
     };
 
@@ -179,16 +191,13 @@ export class EndpointConfigService {
   }
 
   deleteConfig(id: string) {
-    // Eliminar localmente primero (optimista)
     this.configsSignal.update(list => list.filter(c => c.id !== id));
-    // Intento de borrado remoto
     this.http.delete(`${this.API_URL}/${id}`).subscribe({
         error: (e) => console.error('Error eliminando remoto', e)
     });
   }
 
   updateConfig(id: string, changes: Partial<EndpointConfiguration>) {
-    // Actualizar localmente
     this.configsSignal.update(list => 
       list.map(c => c.id === id ? { ...c, ...changes, lastModified: new Date().toISOString() } : c)
     );

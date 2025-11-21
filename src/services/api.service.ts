@@ -7,8 +7,11 @@ import { MappingItem, ServiceOrder, Dealer, EndpointConfiguration, IntegrationLo
 import { EndpointConfigService } from './endpoint-config.service';
 
 /**
- * Servicio principal de comunicación HTTP.
- * Maneja tanto la simulación de datos (Mock) como la comunicación real con los endpoints configurados.
+ * ApiService (Infrastructure Layer)
+ * ---------------------------------
+ * Servicio central de comunicación HTTP.
+ * Actúa como un Gateway agnóstico que decide si usar datos simulados (Mock) 
+ * o datos reales basados en la configuración de Endpoints dinámicos.
  */
 @Injectable({
   providedIn: 'root'
@@ -196,9 +199,12 @@ export class ApiService {
     if(this.useMockData()) return of(this.mockDealers);
     
     const config = this.endpointConfig.getConfig('Dealers');
+    // Validación robusta: Asegurar que existe la URL calculada
     if (!config || !config.computedUrl) return of([]);
     
-    return this.http.get<Partial<Dealer>[]>(config.computedUrl, this.getHttpOptions(config)).pipe(
+    const requestUrl = config.computedUrl;
+
+    return this.http.get<Partial<Dealer>[]>(requestUrl, this.getHttpOptions(config)).pipe(
       map(response => {
         if (!Array.isArray(response)) return [];
         // Mapeo seguro para evitar undefined
@@ -225,7 +231,9 @@ export class ApiService {
     const config = this.endpointConfig.getConfig('Mappings') || this.endpointConfig.getConfig('Carga');
     if (!config || !config.computedUrl) return of([]);
     
-    return this.http.get<MappingItem[]>(config.computedUrl, this.getHttpOptions(config)).pipe(
+    const requestUrl = config.computedUrl;
+
+    return this.http.get<MappingItem[]>(requestUrl, this.getHttpOptions(config)).pipe(
       catchError(() => of([]))
     );
   }
@@ -240,7 +248,9 @@ export class ApiService {
     const config = this.endpointConfig.getConfig('Mappings') || this.endpointConfig.getConfig('Carga');
     if (!config || !config.computedUrl) throw new Error("URL de Mappings no configurada");
     
-    return this.http.post<MappingItem>(config.computedUrl, item, this.getHttpOptions(config));
+    const requestUrl = config.computedUrl;
+
+    return this.http.post<MappingItem>(requestUrl, item, this.getHttpOptions(config));
   }
 
   /** Elimina un mapping existente */
@@ -253,7 +263,9 @@ export class ApiService {
     const config = this.endpointConfig.getConfig('Mappings') || this.endpointConfig.getConfig('Carga');
     if (!config || !config.computedUrl) return of(false);
     
-    return this.http.delete<boolean>(`${config.computedUrl}/${id}`, this.getHttpOptions(config)).pipe(
+    const requestUrl = `${config.computedUrl}/${id}`;
+
+    return this.http.delete<boolean>(requestUrl, this.getHttpOptions(config)).pipe(
        catchError(() => of(false))
     );
   }
@@ -269,6 +281,8 @@ export class ApiService {
     
     const config = this.endpointConfig.getConfig('Obtener Órdenes');
     if (!config || !config.computedUrl) return of([]);
+    
+    const requestUrl = config.computedUrl;
 
     let params = new HttpParams()
       .set('startDate', startDate)
@@ -277,7 +291,7 @@ export class ApiService {
 
     const options = { ...this.getHttpOptions(config), params };
 
-    return this.http.get<ServiceOrder[]>(config.computedUrl, options).pipe(
+    return this.http.get<ServiceOrder[]>(requestUrl, options).pipe(
       catchError(err => {
         console.error('API Error (Orders):', err);
         return of([]);
@@ -321,8 +335,16 @@ export class ApiService {
     }
     
     // Implementación Real:
-    // Actualmente no hay endpoint definido, retornamos vacío.
-    return of([]);
+    const config = this.endpointConfig.getConfig('Historial Uso');
+    if (!config || !config.computedUrl) return of([]);
+    
+    const requestUrl = config.computedUrl;
+    const params = new HttpParams().set('bydCode', bydCode);
+    const options = { ...this.getHttpOptions(config), params };
+
+    return this.http.get<any[]>(requestUrl, options).pipe(
+      catchError(() => of([]))
+    );
   }
 
   /** Obtiene logs de integración del sistema */
@@ -331,8 +353,10 @@ export class ApiService {
       return of(this.mockLogs).pipe(delay(400));
     }
 
-    const config = this.endpointConfig.getConfig('Obtener Logs');
+    const config = this.endpointConfig.getConfig('Obtener Logs') || this.endpointConfig.getConfig('Logs');
     if (!config || !config.computedUrl) return of([]);
+    
+    const requestUrl = config.computedUrl;
 
     let params = new HttpParams();
     if (startDate) params = params.set('startDate', startDate);
@@ -340,7 +364,7 @@ export class ApiService {
 
     const options = { ...this.getHttpOptions(config), params };
 
-    return this.http.get<IntegrationLog[]>(config.computedUrl, options).pipe(
+    return this.http.get<IntegrationLog[]>(requestUrl, options).pipe(
       map(logs => logs.map(l => {
         // Normalización: Determinar si es error basado en el mensaje si el backend no lo marca
         const msg = l.vchMessage ? l.vchMessage.toLowerCase() : '';
@@ -372,12 +396,14 @@ export class ApiService {
     
     const config = this.endpointConfig.getConfig('Vincular');
     if (!config || !config.computedUrl) return of(false);
+    
+    const requestUrl = config.computedUrl;
 
     const payload = {
         daltonCode, bydCode, bydType, description,
         dealerCode: this.selectedDealerCode()
     };
-    return this.http.post<boolean>(config.computedUrl, payload, this.getHttpOptions(config)).pipe(
+    return this.http.post<boolean>(requestUrl, payload, this.getHttpOptions(config)).pipe(
       catchError(() => of(false))
     );
   }
@@ -402,12 +428,21 @@ export class ApiService {
       return of(true).pipe(delay(800));
     }
 
-    const config = this.endpointConfig.getConfig('Vincular Batch');
-    // Fallback a endpoint regular si no existe config específica, aunque no sería eficiente en la vida real
-    // NOTE: Variable renamed from 'url' to 'requestUrl' to prevent confusion with property access
-    const requestUrl = config?.computedUrl || this.endpointConfig.getConfig('Vincular')?.computedUrl?.replace('/link', '/link-batch');
+    // Estrategia de URL: Preferir endpoint dedicado 'Vincular Batch', 
+    // sino fallback inteligente reemplazando el path del endpoint 'Vincular' simple.
+    let config = this.endpointConfig.getConfig('Vincular Batch');
+    let requestUrl = config?.computedUrl;
+
+    if (!requestUrl) {
+       // Fallback: Intentar derivar URL del endpoint simple
+       const simpleConfig = this.endpointConfig.getConfig('Vincular');
+       if (simpleConfig?.computedUrl) {
+           requestUrl = simpleConfig.computedUrl.replace('/link', '/link-batch');
+           config = simpleConfig; // Usar headers/key del simple
+       }
+    }
     
-    if (!requestUrl) return of(false);
+    if (!requestUrl || !config) return of(false);
 
     const payload = {
        items: items.map(i => ({ daltonCode: i.daltonCode, description: i.description })),
@@ -416,10 +451,7 @@ export class ApiService {
        dealerCode: this.selectedDealerCode()
     };
 
-    // Asumimos que usamos las opciones del endpoint 'Vincular' si 'Vincular Batch' no existe específicamente
-    const options = config ? this.getHttpOptions(config) : this.getHttpOptions(this.endpointConfig.getConfig('Vincular')!);
-
-    return this.http.post<boolean>(requestUrl, payload, options).pipe(
+    return this.http.post<boolean>(requestUrl, payload, this.getHttpOptions(config)).pipe(
        catchError(() => of(false))
     );
   }
@@ -461,7 +493,9 @@ export class ApiService {
      const config = this.endpointConfig.getConfig('Transmitir');
      if (!config || !config.computedUrl) return of(false);
      
-     return this.http.post<boolean>(config.computedUrl, payload, this.getHttpOptions(config)).pipe(
+     const requestUrl = config.computedUrl;
+     
+     return this.http.post<boolean>(requestUrl, payload, this.getHttpOptions(config)).pipe(
         catchError(() => of(false))
      );
   }
@@ -488,8 +522,10 @@ export class ApiService {
        return of(true).pipe(delay(800)); // Delay simulado de escritura en BD
      }
 
-     const config = this.endpointConfig.getConfig('Registrar Log');
+     const config = this.endpointConfig.getConfig('Registrar Log') || this.endpointConfig.getConfig('Log');
      if (!config || !config.computedUrl) return of(false);
+
+     const requestUrl = config.computedUrl;
 
      const logEntry = {
         vchOrdenServicio: payload.header.roNumber,
@@ -500,7 +536,7 @@ export class ApiService {
         dealerCode: this.selectedDealerCode()
      };
 
-     return this.http.post<boolean>(config.computedUrl, logEntry, this.getHttpOptions(config)).pipe(
+     return this.http.post<boolean>(requestUrl, logEntry, this.getHttpOptions(config)).pipe(
         catchError(() => of(false))
      );
   }
@@ -513,7 +549,9 @@ export class ApiService {
     const config = this.endpointConfig.getConfig('Carga') || this.endpointConfig.getConfig('Insertar');
     if (!config || !config.computedUrl) return of(false);
     
-    return this.http.post<boolean>(config.computedUrl, payload, this.getHttpOptions(config)).pipe(
+    const requestUrl = config.computedUrl;
+    
+    return this.http.post<boolean>(requestUrl, payload, this.getHttpOptions(config)).pipe(
       catchError(() => of(false))
     );
   }
