@@ -4,10 +4,15 @@ import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } from '@angular/forms';
 import { StoreService } from '../services/store.service';
 import { GeminiService } from '../services/gemini.service';
-import { ApiService } from '../services/api.service';
 import { NotificationService } from '../services/notification.service';
 import { MappingItem } from '../models/app.types';
 
+/**
+ * MappingLinkerComponent
+ * ----------------------
+ * Componente principal para la gestión del "Diccionario Maestro" (Mapping).
+ * Sigue el patrón Master-Detail con un panel de inspección lateral.
+ */
 @Component({
   selector: 'app-mapping-linker',
   standalone: true,
@@ -16,32 +21,36 @@ import { MappingItem } from '../models/app.types';
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class MappingLinkerComponent {
+  // Inyección de Dependencias (Angular 16+ style)
   public store = inject(StoreService);
   private gemini = inject(GeminiService);
   private notification = inject(NotificationService);
-  private fb = inject(FormBuilder);
+  private fb: FormBuilder = inject(FormBuilder);
 
-  // --- DATA SIGNALS ---
+  // --- SIGNALS DE ESTADO ---
+  // Data proviene del Store (Read-only)
   mappings = this.store.mappings;
   
-  // --- UI STATE SIGNALS ---
-  // Selection & Editing
+  // Estado UI local (Mutable)
   selectedItemId = signal<string | null>(null);
   isEditing = signal(false);
+  activeInspectorTab = signal<'detail' | 'history'>('detail');
   
-  // Filters
+  // Filtros
   searchQuery = signal('');
   filterSeries = signal<string | null>(null);
   filterCategory = signal<string | null>(null);
   
-  // AI State
+  // Estado AI
   isAnalyzing = signal(false);
   enrichmentStats = signal<{processed: number, improved: number} | null>(null);
 
-  // --- FORM GROUP ---
-  // Handles both Creation and Editing
+  // Contexto de Datos (Mock para historial de uso)
+  usageHistory = signal<{date: string, ro: string, vin: string}[]>([]);
+
+  // --- FORMULARIO REACTIVO ---
   itemForm: FormGroup = this.fb.group({
-    id: [null], // Hidden ID for updates
+    id: [null],
     vehicleSeries: ['', Validators.required],
     bydCode: ['', [Validators.required, Validators.minLength(3)]],
     bydType: ['Labor', Validators.required],
@@ -51,22 +60,23 @@ export class MappingLinkerComponent {
     standardHours: [0, [Validators.min(0)]]
   });
 
-  // --- COMPUTED SIGNALS ---
+  // --- COMPUTED SIGNALS (Estado Derivado) ---
 
-  // 1. KPIs for the Header
+  // 1. KPIs del Dashboard Superior
   kpiStats = computed(() => {
     const list = this.mappings();
     const total = list.length;
     const laborCount = list.filter(i => i.bydType === 'Labor').length;
     const repairCount = list.filter(i => i.bydType === 'Repair').length;
-    // Calculate "Health" (items with valid categories and descriptions)
+    
+    // Score de Salud: Ítems con data completa
     const healthyCount = list.filter(i => i.mainCategory && i.mainCategory !== 'General' && i.description?.length > 5).length;
     const healthScore = total > 0 ? Math.round((healthyCount / total) * 100) : 0;
 
     return { total, laborCount, repairCount, healthScore };
   });
 
-  // 2. Facets (Unique Lists for Dropdowns)
+  // 2. Facetas para Filtros (Listas únicas)
   facets = computed(() => {
     const list = this.mappings();
     const seriesSet = new Set<string>();
@@ -83,14 +93,14 @@ export class MappingLinkerComponent {
     };
   });
 
-  // 3. Filtered Data Grid
+  // 3. Grid de Datos Filtrado
   filteredGridData = computed(() => {
     let data = this.mappings();
     const q = this.searchQuery().toLowerCase();
     const fSeries = this.filterSeries();
     const fCat = this.filterCategory();
 
-    // Apply Text Search
+    // Filtro de Texto
     if (q) {
       data = data.filter(item => 
         item.bydCode.toLowerCase().includes(q) || 
@@ -99,37 +109,53 @@ export class MappingLinkerComponent {
       );
     }
 
-    // Apply Facets
+    // Filtros de Faceta
     if (fSeries) data = data.filter(i => i.vehicleSeries === fSeries);
     if (fCat) data = data.filter(i => i.mainCategory === fCat);
 
     return data;
   });
 
-  // 4. Currently Selected Item Object
-  activeItem = computed(() => {
-    const id = this.selectedItemId();
-    return this.mappings().find(m => m.id === id) || null;
+  // 4. Detección de Calidad de Datos (Auditoría)
+  dataQualityIssues = computed(() => {
+    const item = this.mappings().find(m => m.id === this.selectedItemId());
+    if (!item) return [];
+    
+    const issues = [];
+    if (!item.standardHours || item.standardHours === 0) issues.push('Faltan Horas Estándar');
+    if (item.mainCategory === 'General' || !item.mainCategory) issues.push('Categoría Genérica');
+    if (item.description.length < 10) issues.push('Descripción muy corta');
+    
+    return issues;
   });
 
   constructor() {
-    // Determine icon based on category (Visual Helper)
+    // Efecto secundario para cargar historial simulado al seleccionar un ítem
     effect(() => {
-      // Reactive side effects if needed
+       const id = this.selectedItemId();
+       if (id) {
+         // Mock fetching history
+         this.usageHistory.set([
+            { date: '2024-11-01', ro: 'XCL00410', vin: '...S510596' },
+            { date: '2024-10-15', ro: 'XCL00388', vin: '...S001793' }
+         ]);
+       } else {
+         this.usageHistory.set([]);
+       }
     });
   }
 
-  // --- ACTIONS ---
+  // --- ACCIONES DE SELECCIÓN ---
 
   selectItem(item: MappingItem) {
     if (this.selectedItemId() === item.id) {
-      // Deselect if clicking same
       this.resetSelection();
     } else {
       this.selectedItemId.set(item.id);
-      this.isEditing.set(true); // Auto-switch to edit mode visual
+      this.isEditing.set(true);
+      this.activeInspectorTab.set('detail');
       
-      // Populate Form
+      // Carga de datos al formulario
       this.itemForm.patchValue({
         id: item.id,
         vehicleSeries: item.vehicleSeries,
@@ -145,7 +171,7 @@ export class MappingLinkerComponent {
 
   createNew() {
     this.resetSelection();
-    this.isEditing.set(true); // Show form in "Create" mode
+    this.isEditing.set(true);
     this.itemForm.reset({
       bydType: 'Labor',
       daltonCode: 'MO006',
@@ -154,26 +180,28 @@ export class MappingLinkerComponent {
     });
   }
 
+  resetSelection() {
+    this.selectedItemId.set(null);
+    this.isEditing.set(false);
+    this.itemForm.reset();
+  }
+
+  // --- PERSISTENCIA ---
+
   saveItem() {
     if (this.itemForm.invalid) return;
-
     const formVal = this.itemForm.value;
     
-    // Decide: Create or Update?
     if (formVal.id) {
-      // Update Logic (In a real app, update via Service ID)
-      this.store.removeMapping(formVal.id); // Remove old
-      this.store.addMapping({ ...formVal }); // Re-add (Simulating update)
+      // Update (Simulado eliminando y agregando)
+      this.store.removeMapping(formVal.id);
+      this.store.addMapping({ ...formVal });
       this.notification.show('Registro actualizado correctamente.', 'success');
     } else {
-      // Create Logic
-      this.store.addMapping({
-        ...formVal,
-        vehicleModel: formVal.vehicleSeries // Mirror series to model for simplicity
-      });
+      // Create
+      this.store.addMapping({ ...formVal });
       this.notification.show('Nuevo código agregado al catálogo.', 'success');
     }
-    
     this.resetSelection();
   }
 
@@ -188,58 +216,41 @@ export class MappingLinkerComponent {
     }
   }
 
-  resetSelection() {
-    this.selectedItemId.set(null);
-    this.isEditing.set(false);
-    this.itemForm.reset();
-  }
-
-  // --- IMPORT / EXPORT ---
+  // --- IMPORTACIÓN / EXPORTACIÓN ---
 
   triggerFileInput() {
     document.getElementById('hiddenFileInput')?.click();
   }
 
-  onFileSelected(event: any) {
-    const file = event.target.files[0];
-    if(!file) return;
+  onFileSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    if (!input.files?.length) return;
+
+    const file = input.files[0];
     
-    const reader = new FileReader();
-    reader.onload = (e: any) => {
-        try {
-            const data = JSON.parse(e.target.result);
-            if(Array.isArray(data)) {
-               const items = data.map((d: any) => ({
-                   bydCode: d.bydCode || d.Codigo || '',
-                   description: d.description || d.Descripcion || '',
-                   vehicleSeries: d.vehicleSeries || d.Modelo || 'GENERICO',
-                   mainCategory: d.mainCategory || d.Categoria || 'General',
-                   standardHours: d.standardHours || d.Horas || 0,
-                   daltonCode: d.daltonCode || 'MO006',
-                   bydType: d.bydType || 'Labor'
-               }));
-               this.store.addBatchMappings(items);
-               this.notification.show(`${items.length} registros importados.`, 'success');
-            }
-        } catch(err) {
-            this.notification.show('Error: Archivo JSON inválido.', 'error');
-        }
-    };
-    reader.readAsText(file);
-    event.target.value = ''; // Reset
+    // Delegar la lógica sucia de parsing al Store Service
+    this.store.processFileImport(file)
+      .then(count => {
+        this.notification.show(`${count} registros importados exitosamente.`, 'success');
+      })
+      .catch(err => {
+        this.notification.show(err, 'error');
+      })
+      .finally(() => {
+        input.value = ''; // Reset input
+      });
   }
 
-  // --- AI ENRICHMENT ---
+  // --- FUNCIONES AI ---
 
   async runAiNormalization() {
-    const items = this.mappings().slice(0, 20); // Limit for demo
+    const items = this.mappings().slice(0, 20); // Límite demo
     if (items.length === 0) return;
 
     this.isAnalyzing.set(true);
     try {
       const enriched = await this.gemini.enrichCatalogBatch(items);
       
-      // Apply updates locally
       let improvedCount = 0;
       enriched.forEach(e => {
          const original = items.find(i => i.id === e.id);
@@ -258,6 +269,8 @@ export class MappingLinkerComponent {
       this.isAnalyzing.set(false);
     }
   }
+
+  // --- HELPERS VISUALES ---
 
   getCategoryIcon(cat: string): string {
     const map: Record<string, string> = {

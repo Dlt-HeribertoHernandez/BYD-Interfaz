@@ -14,7 +14,7 @@ import { EndpointConfiguration } from '../../models/app.types';
 })
 export class EndpointConfigComponent {
   public configService = inject(EndpointConfigService);
-  private fb = inject(FormBuilder);
+  private fb: FormBuilder = inject(FormBuilder);
 
   configs = this.configService.configurations;
   currentEnv = this.configService.currentEnvironment;

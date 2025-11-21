@@ -4,8 +4,15 @@ import { ApiService } from './api.service';
 import { MappingItem } from '../models/app.types';
 
 /**
- * StoreService actúa como la "Fuente de la Verdad" para el estado global de Mappings.
- * Utiliza el patrón de gestión de estado basado en Signals.
+ * StoreService (State Management)
+ * -------------------------------
+ * Actúa como la "Fuente de la Verdad" (Single Source of Truth) para el dominio de Mappings.
+ * Implementa un patrón similar a Redux/NgRx pero simplificado usando Angular Signals.
+ * 
+ * Responsabilidades:
+ * 1. Mantener el estado de la lista de mappings.
+ * 2. Proveer estado derivado (estadísticas) vía computed signals.
+ * 3. Orquestar operaciones de E/S (lectura de archivos, llamadas a API).
  */
 @Injectable({
   providedIn: 'root'
@@ -14,15 +21,14 @@ export class StoreService {
   private api = inject(ApiService);
 
   // --- ESTADO (State) ---
-  // Señal privada editable solo dentro del servicio
+  // Señal privada editable solo dentro del servicio (Encapsulamiento)
   private mappingsSignal = signal<MappingItem[]>([]);
   
-  // Señal pública de solo lectura para los componentes
+  // Señal pública de solo lectura para consumo en componentes
   readonly mappings = this.mappingsSignal.asReadonly();
   
   // --- ESTADO DERIVADO (Computed) ---
-  // Estadísticas calculadas automáticamente cuando 'mappings' cambia.
-  // Esto optimiza el rendimiento evitando recalculaciones innecesarias.
+  // Estadísticas calculadas automáticamente. Se recalculan solo si 'mappingsSignal' cambia.
   readonly stats = computed(() => {
     const list = this.mappingsSignal();
     return {
@@ -34,9 +40,9 @@ export class StoreService {
   });
 
   constructor() {
-    // Efecto secundario: Recargar mappings si cambia el modo (Mock vs Live)
+    // Efecto: Sincronización reactiva con el modo de datos (Mock/Live)
     effect(() => {
-       this.api.useMockData(); // Dependencia reactiva
+       this.api.useMockData(); // Dependencia
        this.loadMappings();
     });
   }
@@ -51,9 +57,7 @@ export class StoreService {
   }
 
   /**
-   * Agrega un nuevo mapping al estado local y lo persiste vía API.
-   * Utiliza actualización optimista (actualiza la UI antes de confirmar, 
-   * aunque aquí simplificado a esperar respuesta).
+   * Agrega un nuevo mapping al estado y lo persiste.
    */
   addMapping(item: Omit<MappingItem, 'id' | 'status'>) {
     const newItem: MappingItem = {
@@ -63,18 +67,70 @@ export class StoreService {
     };
     
     this.api.createMapping(newItem).subscribe(() => {
-      // Actualización inmutable del array
+      // Actualización inmutable del estado
       this.mappingsSignal.update(current => [newItem, ...current]);
     });
   }
 
   /**
-   * Procesa múltiples mappings (Carga Masiva).
+   * Procesa la importación de un archivo JSON externo para carga masiva.
+   * Parsea, valida y normaliza los datos antes de ingresarlos al estado.
+   * @param file Archivo seleccionado por el usuario
+   * @returns Promise con la cantidad de registros procesados
+   */
+  processFileImport(file: File): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      
+      reader.onload = (e: any) => {
+        try {
+          const rawData = JSON.parse(e.target.result);
+          
+          if (!Array.isArray(rawData)) {
+            throw new Error("El formato JSON debe ser un Array.");
+          }
+
+          // Mapeo y Sanitización de datos externos
+          const validItems: Omit<MappingItem, 'id' | 'status'>[] = rawData.map((d: any) => ({
+             bydCode: d.bydCode || d.Codigo || '',
+             description: d.description || d.Descripcion || '',
+             vehicleSeries: d.vehicleSeries || d.Modelo || 'GENERICO',
+             mainCategory: d.mainCategory || d.Categoria || 'General',
+             standardHours: Number(d.standardHours || d.Horas || 0),
+             daltonCode: d.daltonCode || 'MO006',
+             bydType: (d.bydType === 'Repair' || d.bydType === 'Labor') ? d.bydType : 'Labor'
+          })).filter(i => i.bydCode && i.description); // Filtro básico de integridad
+
+          if (validItems.length > 0) {
+            this.addBatchMappings(validItems);
+            resolve(validItems.length);
+          } else {
+            reject("No se encontraron registros válidos en el archivo.");
+          }
+        } catch (err) {
+          reject("Error al procesar el archivo JSON. Verifique el formato.");
+        }
+      };
+
+      reader.onerror = () => reject("Error de lectura de archivo.");
+      reader.readAsText(file);
+    });
+  }
+
+  /**
+   * Procesa múltiples mappings (Batch).
+   * Idealmente esto iría a un endpoint /batch en la API.
    */
   addBatchMappings(items: Omit<MappingItem, 'id' | 'status'>[]) {
-    // En un escenario real, esto debería ser un endpoint 'batch' en la API
-    // para evitar múltiples llamadas HTTP.
-    items.forEach(item => this.addMapping(item));
+    const newItems: MappingItem[] = items.map(i => ({
+      ...i,
+      id: crypto.randomUUID(),
+      status: 'Linked'
+    }));
+    
+    // Actualizamos el estado local inmediatamente (Optimistic UI)
+    // En producción, aquí llamaríamos a this.api.createBatch(...)
+    this.mappingsSignal.update(current => [...newItems, ...current]);
   }
 
   /**

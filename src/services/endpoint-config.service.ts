@@ -192,6 +192,5 @@ export class EndpointConfigService {
     this.configsSignal.update(list => 
       list.map(c => c.id === id ? { ...c, ...changes, lastModified: new Date().toISOString() } : c)
     );
-    // TODO: Implementar PUT si el backend lo soporta (actualmente solo POST especificado)
   }
 }

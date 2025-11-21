@@ -3,16 +3,20 @@ import { Injectable, signal, computed } from '@angular/core';
 import { BusinessRule, ClassificationRule } from '../models/app.types';
 
 /**
- * Servicio de Reglas de Negocio.
+ * BusinessRulesService
+ * --------------------
  * Centraliza la lógica de transformación y filtrado de datos.
- * AHORA TAMBIÉN: Gestiona la inteligencia de clasificación automática.
+ * Implementa un patrón de ESTRATEGIA para determinar:
+ * 1. Admisión: ¿Qué códigos del DMS son relevantes para BYD?
+ * 2. Clasificación: ¿A qué categoría pertenece un ítem basado en su descripción?
  */
 @Injectable({
   providedIn: 'root'
 })
 export class BusinessRulesService {
 
-  // --- REGLAS DE ADMISIÓN (Filtro de entrada) ---
+  // --- REGLAS DE ADMISIÓN (Whitelist Filter) ---
+  // Define qué códigos internos (ej. 'MO006') se muestran en la UI.
   private rulesSignal = signal<BusinessRule[]>([
     {
       id: 'default-mirror',
@@ -26,8 +30,8 @@ export class BusinessRulesService {
     }
   ]);
 
-  // --- REGLAS DE CLASIFICACIÓN (Diccionario Inteligente) ---
-  // Estas reglas permiten etiquetar items automáticamente sin intervención de IA externa
+  // --- REGLAS DE CLASIFICACIÓN (Keyword Dictionary) ---
+  // Motor de inferencia simple para etiquetar items automáticamente.
   private classificationRulesSignal = signal<ClassificationRule[]>([
     { id: '1', keyword: 'ACEITE', category: 'Mantenimiento', icon: 'fa-oil-can', priority: 'Normal', colorClass: 'blue' },
     { id: '2', keyword: 'BALATAS', category: 'Frenos', icon: 'fa-circle-stop', priority: 'High', colorClass: 'red' },
@@ -40,7 +44,7 @@ export class BusinessRulesService {
   readonly rules = this.rulesSignal.asReadonly();
   readonly classificationRules = this.classificationRulesSignal.asReadonly();
 
-  // Regla activa calculada (siempre debe haber una)
+  // Regla activa calculada (siempre debe haber una estrategia activa)
   readonly activeRule = computed(() => {
     return this.rulesSignal().find(r => r.isActive) || this.rulesSignal()[0];
   });
@@ -72,6 +76,7 @@ export class BusinessRulesService {
     if (this.rulesSignal().length <= 1) return; 
     this.rulesSignal.update(list => list.filter(r => r.id !== id));
     
+    // Asegurar que siempre haya una regla activa
     if (!this.rulesSignal().some(r => r.isActive)) {
        this.rulesSignal.update(list => {
          if (list.length > 0) list[0].isActive = true;
@@ -91,11 +96,11 @@ export class BusinessRulesService {
     this.classificationRulesSignal.update(list => list.filter(r => r.id !== id));
   }
 
-  // --- LÓGICA DE NEGOCIO (Evaluación) ---
+  // --- LÓGICA DE EVALUACIÓN ---
 
   /**
    * Verifica si un código específico (proveniente de una orden) es considerado
-   * un "Placeholder" o Comodín (ej. MO006).
+   * un "Placeholder" o Comodín (ej. MO006) según la estrategia activa.
    */
   isPlaceholderCode(code: string): boolean {
     const active = this.activeRule();
@@ -105,6 +110,7 @@ export class BusinessRulesService {
 
   /**
    * Determina si un ítem de la orden debe mostrarse en la interfaz principal.
+   * Actúa como un filtro "Whitelist".
    */
   isItemRelevant(code: string): boolean {
     const active = this.activeRule();
@@ -118,13 +124,13 @@ export class BusinessRulesService {
 
   /**
    * Analiza una descripción y devuelve la mejor clasificación posible
-   * basada en las reglas definidas por el usuario.
+   * basada en las palabras clave definidas por el usuario.
    */
   classifyItem(description: string): { category: string, icon: string, priority: string, colorClass: string } | null {
     const descUpper = description.toUpperCase();
     const rules = this.classificationRulesSignal();
 
-    // Buscar la primera coincidencia
+    // Estrategia: First Match Wins
     const match = rules.find(r => descUpper.includes(r.keyword.toUpperCase()));
 
     if (match) {

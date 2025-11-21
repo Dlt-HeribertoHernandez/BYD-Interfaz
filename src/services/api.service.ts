@@ -196,9 +196,9 @@ export class ApiService {
     if(this.useMockData()) return of(this.mockDealers);
     
     const config = this.endpointConfig.getConfig('Dealers');
-    if (!config || !config.url) return of([]);
+    if (!config || !config.computedUrl) return of([]);
     
-    return this.http.get<Partial<Dealer>[]>(config.url, this.getHttpOptions(config)).pipe(
+    return this.http.get<Partial<Dealer>[]>(config.computedUrl, this.getHttpOptions(config)).pipe(
       map(response => {
         if (!Array.isArray(response)) return [];
         // Mapeo seguro para evitar undefined
@@ -223,9 +223,9 @@ export class ApiService {
     if (this.useMockData()) return of([...this.mockMappings]).pipe(delay(500));
     
     const config = this.endpointConfig.getConfig('Mappings') || this.endpointConfig.getConfig('Carga');
-    if (!config || !config.url) return of([]);
+    if (!config || !config.computedUrl) return of([]);
     
-    return this.http.get<MappingItem[]>(config.url, this.getHttpOptions(config)).pipe(
+    return this.http.get<MappingItem[]>(config.computedUrl, this.getHttpOptions(config)).pipe(
       catchError(() => of([]))
     );
   }
@@ -238,9 +238,9 @@ export class ApiService {
     }
     
     const config = this.endpointConfig.getConfig('Mappings') || this.endpointConfig.getConfig('Carga');
-    if (!config || !config.url) throw new Error("URL de Mappings no configurada");
+    if (!config || !config.computedUrl) throw new Error("URL de Mappings no configurada");
     
-    return this.http.post<MappingItem>(config.url, item, this.getHttpOptions(config));
+    return this.http.post<MappingItem>(config.computedUrl, item, this.getHttpOptions(config));
   }
 
   /** Elimina un mapping existente */
@@ -251,9 +251,9 @@ export class ApiService {
     }
     
     const config = this.endpointConfig.getConfig('Mappings') || this.endpointConfig.getConfig('Carga');
-    if (!config || !config.url) return of(false);
+    if (!config || !config.computedUrl) return of(false);
     
-    return this.http.delete<boolean>(`${config.url}/${id}`, this.getHttpOptions(config)).pipe(
+    return this.http.delete<boolean>(`${config.computedUrl}/${id}`, this.getHttpOptions(config)).pipe(
        catchError(() => of(false))
     );
   }
@@ -268,7 +268,7 @@ export class ApiService {
     }
     
     const config = this.endpointConfig.getConfig('Obtener Órdenes');
-    if (!config || !config.url) return of([]);
+    if (!config || !config.computedUrl) return of([]);
 
     let params = new HttpParams()
       .set('startDate', startDate)
@@ -277,7 +277,7 @@ export class ApiService {
 
     const options = { ...this.getHttpOptions(config), params };
 
-    return this.http.get<ServiceOrder[]>(config.url, options).pipe(
+    return this.http.get<ServiceOrder[]>(config.computedUrl, options).pipe(
       catchError(err => {
         console.error('API Error (Orders):', err);
         return of([]);
@@ -289,7 +289,7 @@ export class ApiService {
    * Obtiene el historial de uso de un código BYD específico en órdenes pasadas.
    * Útil para ver si un código ha sido usado antes y en qué vehículos.
    */
-  getBydCodeUsageHistory(bydCode: string): Observable<{orderRef: string, date: string, description: string, vin: string}[]> {
+  getMappingUsageHistory(bydCode: string): Observable<{orderRef: string, date: string, description: string, vin: string}[]> {
     if (this.useMockData()) {
       // Simular búsqueda en el array de mock local
       const history: {orderRef: string, date: string, description: string, vin: string}[] = [];
@@ -332,7 +332,7 @@ export class ApiService {
     }
 
     const config = this.endpointConfig.getConfig('Obtener Logs');
-    if (!config || !config.url) return of([]);
+    if (!config || !config.computedUrl) return of([]);
 
     let params = new HttpParams();
     if (startDate) params = params.set('startDate', startDate);
@@ -340,7 +340,7 @@ export class ApiService {
 
     const options = { ...this.getHttpOptions(config), params };
 
-    return this.http.get<IntegrationLog[]>(config.url, options).pipe(
+    return this.http.get<IntegrationLog[]>(config.computedUrl, options).pipe(
       map(logs => logs.map(l => {
         // Normalización: Determinar si es error basado en el mensaje si el backend no lo marca
         const msg = l.vchMessage ? l.vchMessage.toLowerCase() : '';
@@ -371,13 +371,13 @@ export class ApiService {
     }
     
     const config = this.endpointConfig.getConfig('Vincular');
-    if (!config || !config.url) return of(false);
+    if (!config || !config.computedUrl) return of(false);
 
     const payload = {
         daltonCode, bydCode, bydType, description,
         dealerCode: this.selectedDealerCode()
     };
-    return this.http.post<boolean>(config.url, payload, this.getHttpOptions(config)).pipe(
+    return this.http.post<boolean>(config.computedUrl, payload, this.getHttpOptions(config)).pipe(
       catchError(() => of(false))
     );
   }
@@ -404,9 +404,10 @@ export class ApiService {
 
     const config = this.endpointConfig.getConfig('Vincular Batch');
     // Fallback a endpoint regular si no existe config específica, aunque no sería eficiente en la vida real
-    const url = config?.url || this.endpointConfig.getConfig('Vincular')?.url?.replace('/link', '/link-batch');
+    // NOTE: Variable renamed from 'url' to 'requestUrl' to prevent confusion with property access
+    const requestUrl = config?.computedUrl || this.endpointConfig.getConfig('Vincular')?.computedUrl?.replace('/link', '/link-batch');
     
-    if (!url) return of(false);
+    if (!requestUrl) return of(false);
 
     const payload = {
        items: items.map(i => ({ daltonCode: i.daltonCode, description: i.description })),
@@ -418,7 +419,7 @@ export class ApiService {
     // Asumimos que usamos las opciones del endpoint 'Vincular' si 'Vincular Batch' no existe específicamente
     const options = config ? this.getHttpOptions(config) : this.getHttpOptions(this.endpointConfig.getConfig('Vincular')!);
 
-    return this.http.post<boolean>(url, payload, options).pipe(
+    return this.http.post<boolean>(requestUrl, payload, options).pipe(
        catchError(() => of(false))
     );
   }
@@ -458,9 +459,9 @@ export class ApiService {
      }
 
      const config = this.endpointConfig.getConfig('Transmitir');
-     if (!config || !config.url) return of(false);
+     if (!config || !config.computedUrl) return of(false);
      
-     return this.http.post<boolean>(config.url, payload, this.getHttpOptions(config)).pipe(
+     return this.http.post<boolean>(config.computedUrl, payload, this.getHttpOptions(config)).pipe(
         catchError(() => of(false))
      );
   }
@@ -488,7 +489,7 @@ export class ApiService {
      }
 
      const config = this.endpointConfig.getConfig('Registrar Log');
-     if (!config || !config.url) return of(false);
+     if (!config || !config.computedUrl) return of(false);
 
      const logEntry = {
         vchOrdenServicio: payload.header.roNumber,
@@ -499,7 +500,7 @@ export class ApiService {
         dealerCode: this.selectedDealerCode()
      };
 
-     return this.http.post<boolean>(config.url, logEntry, this.getHttpOptions(config)).pipe(
+     return this.http.post<boolean>(config.computedUrl, logEntry, this.getHttpOptions(config)).pipe(
         catchError(() => of(false))
      );
   }
@@ -510,9 +511,9 @@ export class ApiService {
       return of(true).pipe(delay(2000));
     }
     const config = this.endpointConfig.getConfig('Carga') || this.endpointConfig.getConfig('Insertar');
-    if (!config || !config.url) return of(false);
+    if (!config || !config.computedUrl) return of(false);
     
-    return this.http.post<boolean>(config.url, payload, this.getHttpOptions(config)).pipe(
+    return this.http.post<boolean>(config.computedUrl, payload, this.getHttpOptions(config)).pipe(
       catchError(() => of(false))
     );
   }

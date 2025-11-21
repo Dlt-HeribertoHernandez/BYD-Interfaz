@@ -14,7 +14,7 @@ import { BusinessRule, ClassificationRule } from '../../models/app.types';
 })
 export class BusinessLogicComponent {
   rulesService = inject(BusinessRulesService);
-  private fb = inject(FormBuilder);
+  private fb: FormBuilder = inject(FormBuilder);
 
   // Signals de Datos
   rules = this.rulesService.rules;

@@ -77,8 +77,10 @@ export class LogMonitorComponent {
        }, 600);
     } else {
        // Live Load
-       const config = this.configService.getConfig('Logs') || { url: 'https://api.daltonsoft-integration.com/api/logs' };
-       this.http.get<IntegrationLog[]>(config.url).subscribe({
+       const config = this.configService.getConfig('Logs');
+       const url = config?.computedUrl || 'https://api.daltonsoft-integration.com/api/logs';
+       
+       this.http.get<IntegrationLog[]>(url).subscribe({
          next: (data) => {
             this.logs.set(data.map(l => ({...l, isError: l.vchMessage.includes('not match') || l.vchMessage.includes('error')})));
             this.isLoading.set(false);
