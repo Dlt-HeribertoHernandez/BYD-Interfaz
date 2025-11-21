@@ -178,8 +178,10 @@ export class ApiService {
     
     // 2. Inyectar API Key si existe y no fue sobreescrita
     if (config.apiKey) {
-        if (!headers.has('Authorization') && !headers.has('x-api-key') && !headers.has('X-API-Key')) {
-             headers = headers.set('x-api-key', config.apiKey);
+        // Use the configured header key (default to x-api-key)
+        const keyName = config.headerKey || 'x-api-key';
+        if (!headers.has('Authorization') && !headers.has(keyName)) {
+             headers = headers.set(keyName, config.apiKey);
         }
     }
     return { headers };

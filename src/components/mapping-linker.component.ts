@@ -1,3 +1,4 @@
+
 import { Component, signal, inject, computed, effect, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } from '@angular/forms';
@@ -5,13 +6,8 @@ import { StoreService } from '../services/store.service';
 import { GeminiService } from '../services/gemini.service';
 import { ApiService } from '../services/api.service';
 import { NotificationService } from '../services/notification.service';
-import { MappingItem, ServiceOrderItem } from '../models/app.types';
+import { MappingItem } from '../models/app.types';
 
-/**
- * Componente: Catálogo Maestro de Labour Codes (BYD).
- * REFACTORIZADO: Se eliminó la carga de Excel. Ahora actúa como visor y gestor
- * de la tabla maestra que ya reside en base de datos.
- */
 @Component({
   selector: 'app-mapping-linker',
   standalone: true,
@@ -21,142 +17,189 @@ import { MappingItem, ServiceOrderItem } from '../models/app.types';
 })
 export class MappingLinkerComponent {
   public store = inject(StoreService);
-  private api = inject(ApiService);
   private gemini = inject(GeminiService);
   private notification = inject(NotificationService);
   private fb = inject(FormBuilder);
 
-  // --- ESTADO REACTIVO (Signals) ---
+  // --- DATA SIGNALS ---
   mappings = this.store.mappings;
-  stats = this.store.stats;
-
-  // Filtros de vista
-  selectedSeries = signal<string | null>(null);
-  selectedCategory = signal<string | null>(null);
-  searchTerm = signal<string>('');
   
-  // Estado IA
+  // --- UI STATE SIGNALS ---
+  // Selection & Editing
+  selectedItemId = signal<string | null>(null);
+  isEditing = signal(false);
+  
+  // Filters
+  searchQuery = signal('');
+  filterSeries = signal<string | null>(null);
+  filterCategory = signal<string | null>(null);
+  
+  // AI State
   isAnalyzing = signal(false);
-  enrichedItemsIds = signal<Set<string>>(new Set());
-  enrichmentSummary = signal<{count: number, categories: number} | null>(null);
+  enrichmentStats = signal<{processed: number, improved: number} | null>(null);
 
-  // --- COMPUTED: Lógica de Agrupación y Filtrado ---
+  // --- FORM GROUP ---
+  // Handles both Creation and Editing
+  itemForm: FormGroup = this.fb.group({
+    id: [null], // Hidden ID for updates
+    vehicleSeries: ['', Validators.required],
+    bydCode: ['', [Validators.required, Validators.minLength(3)]],
+    bydType: ['Labor', Validators.required],
+    daltonCode: ['MO006', [Validators.required]], 
+    description: ['', Validators.required],
+    mainCategory: ['General'],
+    standardHours: [0, [Validators.min(0)]]
+  });
 
-  seriesGroups = computed(() => {
-    const groups = new Map<string, number>();
-    this.mappings().forEach(m => {
-      const s = m.vehicleSeries || 'GENERICO';
-      groups.set(s, (groups.get(s) || 0) + 1);
+  // --- COMPUTED SIGNALS ---
+
+  // 1. KPIs for the Header
+  kpiStats = computed(() => {
+    const list = this.mappings();
+    const total = list.length;
+    const laborCount = list.filter(i => i.bydType === 'Labor').length;
+    const repairCount = list.filter(i => i.bydType === 'Repair').length;
+    // Calculate "Health" (items with valid categories and descriptions)
+    const healthyCount = list.filter(i => i.mainCategory && i.mainCategory !== 'General' && i.description?.length > 5).length;
+    const healthScore = total > 0 ? Math.round((healthyCount / total) * 100) : 0;
+
+    return { total, laborCount, repairCount, healthScore };
+  });
+
+  // 2. Facets (Unique Lists for Dropdowns)
+  facets = computed(() => {
+    const list = this.mappings();
+    const seriesSet = new Set<string>();
+    const catSet = new Set<string>();
+
+    list.forEach(item => {
+      if (item.vehicleSeries) seriesSet.add(item.vehicleSeries);
+      if (item.mainCategory) catSet.add(item.mainCategory);
     });
-    
-    return Array.from(groups.entries())
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+
+    return {
+      series: Array.from(seriesSet).sort(),
+      categories: Array.from(catSet).sort()
+    };
   });
 
-  availableCategories = computed(() => {
-    const currentSeries = this.selectedSeries();
-    if (!currentSeries) return [];
-    
-    const cats = new Set<string>();
-    this.mappings()
-      .filter(m => (m.vehicleSeries || 'GENERICO') === currentSeries)
-      .forEach(m => {
-        if (m.mainCategory) cats.add(m.mainCategory);
-      });
-    
-    return Array.from(cats).sort();
-  });
+  // 3. Filtered Data Grid
+  filteredGridData = computed(() => {
+    let data = this.mappings();
+    const q = this.searchQuery().toLowerCase();
+    const fSeries = this.filterSeries();
+    const fCat = this.filterCategory();
 
-  filteredMappings = computed(() => {
-    let list = this.mappings();
-    const series = this.selectedSeries();
-    const cat = this.selectedCategory();
-    const term = this.searchTerm().toLowerCase();
-
-    if (series) {
-      list = list.filter(m => (m.vehicleSeries || 'GENERICO') === series);
-    }
-
-    if (cat) {
-      list = list.filter(m => m.mainCategory === cat);
-    }
-
-    if (term) {
-      list = list.filter(m => 
-        m.description?.toLowerCase().includes(term) || 
-        m.bydCode.toLowerCase().includes(term)
+    // Apply Text Search
+    if (q) {
+      data = data.filter(item => 
+        item.bydCode.toLowerCase().includes(q) || 
+        item.daltonCode.toLowerCase().includes(q) ||
+        item.description?.toLowerCase().includes(q)
       );
     }
 
-    return list;
+    // Apply Facets
+    if (fSeries) data = data.filter(i => i.vehicleSeries === fSeries);
+    if (fCat) data = data.filter(i => i.mainCategory === fCat);
+
+    return data;
   });
 
-  // Formulario de registro manual (Para correcciones rápidas)
-  linkForm: FormGroup = this.fb.group({
-    vehicleSeries: ['', Validators.required],
-    bydCode: ['', [Validators.required, Validators.minLength(3)]],
-    bydType: ['Labor'],
-    daltonCode: ['MO006', [Validators.required]], // Default al genérico
-    description: [''],
-    standardHours: [0],
-    mainCategory: ['']
+  // 4. Currently Selected Item Object
+  activeItem = computed(() => {
+    const id = this.selectedItemId();
+    return this.mappings().find(m => m.id === id) || null;
   });
 
   constructor() {
+    // Determine icon based on category (Visual Helper)
     effect(() => {
-      const groups = this.seriesGroups();
-      if (groups.length > 0 && !this.selectedSeries()) {
-        this.selectedSeries.set(groups[0].name);
-      }
+      // Reactive side effects if needed
     });
   }
 
-  selectSeries(name: string) {
-    this.selectedSeries.set(name);
-    this.selectedCategory.set(null);
-  }
+  // --- ACTIONS ---
 
-  toggleCategory(cat: string) {
-    if (this.selectedCategory() === cat) {
-      this.selectedCategory.set(null);
+  selectItem(item: MappingItem) {
+    if (this.selectedItemId() === item.id) {
+      // Deselect if clicking same
+      this.resetSelection();
     } else {
-      this.selectedCategory.set(cat);
-    }
-  }
-
-  onSubmitManual() {
-    if (this.linkForm.valid) {
-      const formVal = this.linkForm.value;
+      this.selectedItemId.set(item.id);
+      this.isEditing.set(true); // Auto-switch to edit mode visual
       
-      const newItem = {
-        ...formVal,
-        bydType: 'Labor',
-        vehicleModel: formVal.vehicleSeries 
-      };
-
-      this.store.addMapping(newItem);
-      
-      this.linkForm.reset({ 
-        bydType: 'Labor', 
-        daltonCode: 'MO006',
-        vehicleSeries: formVal.vehicleSeries,
-        mainCategory: formVal.mainCategory,
-        standardHours: 0
+      // Populate Form
+      this.itemForm.patchValue({
+        id: item.id,
+        vehicleSeries: item.vehicleSeries,
+        bydCode: item.bydCode,
+        bydType: item.bydType,
+        daltonCode: item.daltonCode,
+        description: item.description,
+        mainCategory: item.mainCategory || 'General',
+        standardHours: item.standardHours
       });
-      
-      this.notification.show('Código agregado al catálogo maestro.', 'success');
     }
   }
 
-  deleteItem(id: string) {
-    if(confirm('¿Eliminar este código del catálogo maestro?')) {
-        this.store.removeMapping(id);
-        this.notification.show('Registro eliminado.', 'info', 2000);
+  createNew() {
+    this.resetSelection();
+    this.isEditing.set(true); // Show form in "Create" mode
+    this.itemForm.reset({
+      bydType: 'Labor',
+      daltonCode: 'MO006',
+      mainCategory: 'General',
+      standardHours: 0
+    });
+  }
+
+  saveItem() {
+    if (this.itemForm.invalid) return;
+
+    const formVal = this.itemForm.value;
+    
+    // Decide: Create or Update?
+    if (formVal.id) {
+      // Update Logic (In a real app, update via Service ID)
+      this.store.removeMapping(formVal.id); // Remove old
+      this.store.addMapping({ ...formVal }); // Re-add (Simulating update)
+      this.notification.show('Registro actualizado correctamente.', 'success');
+    } else {
+      // Create Logic
+      this.store.addMapping({
+        ...formVal,
+        vehicleModel: formVal.vehicleSeries // Mirror series to model for simplicity
+      });
+      this.notification.show('Nuevo código agregado al catálogo.', 'success');
+    }
+    
+    this.resetSelection();
+  }
+
+  deleteCurrentItem() {
+    const id = this.selectedItemId();
+    if (!id) return;
+
+    if (confirm('¿Estás seguro de eliminar este registro del catálogo maestro?')) {
+      this.store.removeMapping(id);
+      this.notification.show('Registro eliminado.', 'info');
+      this.resetSelection();
     }
   }
 
-  // --- IMPORTACIÓN MASIVA (JSON) ---
+  resetSelection() {
+    this.selectedItemId.set(null);
+    this.isEditing.set(false);
+    this.itemForm.reset();
+  }
+
+  // --- IMPORT / EXPORT ---
+
+  triggerFileInput() {
+    document.getElementById('hiddenFileInput')?.click();
+  }
+
   onFileSelected(event: any) {
     const file = event.target.files[0];
     if(!file) return;
@@ -164,10 +207,8 @@ export class MappingLinkerComponent {
     const reader = new FileReader();
     reader.onload = (e: any) => {
         try {
-            // Intento de parseo JSON
             const data = JSON.parse(e.target.result);
             if(Array.isArray(data)) {
-               // Normalizar campos mínimos
                const items = data.map((d: any) => ({
                    bydCode: d.bydCode || d.Codigo || '',
                    description: d.description || d.Descripcion || '',
@@ -177,72 +218,68 @@ export class MappingLinkerComponent {
                    daltonCode: d.daltonCode || 'MO006',
                    bydType: d.bydType || 'Labor'
                }));
-               
                this.store.addBatchMappings(items);
-               this.notification.show(`Importación exitosa: ${items.length} registros procesados.`, 'success');
-            } else {
-               this.notification.show('El formato del archivo no es una lista válida (Array JSON).', 'warning');
+               this.notification.show(`${items.length} registros importados.`, 'success');
             }
         } catch(err) {
-            console.error(err);
-            this.notification.show('Error al leer el archivo. Verifique que sea un JSON válido.', 'error');
+            this.notification.show('Error: Archivo JSON inválido.', 'error');
         }
     };
-    
-    reader.onerror = () => {
-       this.notification.show('Error de lectura de archivo.', 'error');
-    };
-
     reader.readAsText(file);
-    
-    // Reset input
-    event.target.value = '';
+    event.target.value = ''; // Reset
   }
 
-  // --- IA Features ---
+  // --- AI ENRICHMENT ---
 
-  async enrichCatalog() {
-    const itemsToProcess = this.filteredMappings().slice(0, 20);
-    
-    if (itemsToProcess.length === 0) {
-      this.notification.show('No hay items visibles para procesar.', 'warning');
-      return;
-    }
+  async runAiNormalization() {
+    const items = this.mappings().slice(0, 20); // Limit for demo
+    if (items.length === 0) return;
 
     this.isAnalyzing.set(true);
-    this.enrichmentSummary.set(null);
-
     try {
-      const enrichedData = await this.gemini.enrichCatalogBatch(itemsToProcess);
+      const enriched = await this.gemini.enrichCatalogBatch(items);
       
-      if (enrichedData.length === 0) {
-        this.notification.show('La IA no pudo procesar los datos.', 'error');
-        return;
-      }
-
-      const updatedIds = new Set<string>();
-      let categoriesAssigned = 0;
-
-      enrichedData.forEach(newItem => {
-         updatedIds.add(newItem.id);
-         if (newItem.category) categoriesAssigned++;
-         
-         const original = itemsToProcess.find(i => i.id === newItem.id);
-         if(original) {
-             original.description = newItem.cleanDescription;
-             original.mainCategory = newItem.category;
+      // Apply updates locally
+      let improvedCount = 0;
+      enriched.forEach(e => {
+         const original = items.find(i => i.id === e.id);
+         if (original) {
+           original.description = e.cleanDescription;
+           original.mainCategory = e.category;
+           improvedCount++;
          }
       });
-      
-      this.enrichedItemsIds.set(updatedIds);
-      this.enrichmentSummary.set({ count: enrichedData.length, categories: categoriesAssigned });
-      this.notification.show(`Catálogo actualizado: ${enrichedData.length} descripciones mejoradas.`, 'success');
 
+      this.enrichmentStats.set({ processed: items.length, improved: improvedCount });
+      this.notification.show('Catálogo normalizado con Inteligencia Artificial.', 'success');
     } catch (e) {
-       console.error(e);
-       this.notification.show('Error en servicio de IA.', 'error');
+      this.notification.show('Error conectando con IA.', 'error');
     } finally {
       this.isAnalyzing.set(false);
     }
+  }
+
+  getCategoryIcon(cat: string): string {
+    const map: Record<string, string> = {
+      'Motor': 'fa-cogs',
+      'Frenos': 'fa-circle-stop',
+      'Suspensión': 'fa-align-justify',
+      'Eléctrico': 'fa-bolt',
+      'Carrocería': 'fa-car-side',
+      'Mantenimiento': 'fa-oil-can',
+      'General': 'fa-cube'
+    };
+    return map[cat] || 'fa-tag';
+  }
+  
+  getCategoryColor(cat: string): string {
+    const map: Record<string, string> = {
+      'Motor': 'text-red-600 bg-red-50 dark:bg-red-900/20 border-red-200',
+      'Frenos': 'text-orange-600 bg-orange-50 dark:bg-orange-900/20 border-orange-200',
+      'Eléctrico': 'text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200',
+      'Mantenimiento': 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 border-blue-200',
+      'General': 'text-gray-600 bg-gray-50 dark:bg-gray-700 border-gray-200'
+    };
+    return map[cat] || 'text-gray-600 bg-gray-50 dark:bg-gray-700 border-gray-200';
   }
 }

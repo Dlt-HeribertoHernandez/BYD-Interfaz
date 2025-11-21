@@ -209,26 +209,37 @@ export interface Dealer {
 }
 
 /**
- * Configuración de Endpoints Dinámicos.
- * Permite cambiar URLs y estructuras JSON sin recompilar.
+ * Configuración de Endpoints Dinámicos (Multi-Entorno).
+ * Permite definir BasePaths separados para Prod, QA, Dev y Local.
  */
 export interface EndpointConfiguration {
   id: string;
-  name: string;        
-  description: string; 
-  url: string;         
+  name: string;        // vchNombre
+  description: string; // vchDescripcion
+  
+  // Entornos
+  basePathProd: string;
+  basePathQa: string;
+  basePathDev: string;
+  basePathLocal: string;
+  resource: string;     // vchResource (ej. /dealers)
+  
+  // Seguridad
+  apiKeyProd?: string;
+  apiKeyQa?: string;
+  headerKey: string;    // vchHeaderKey (ej. X-API-Key)
+  headers?: string;     // Headers adicionales en formato JSON string
+  
+  // Configuración Frontend
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   targetTable?: string; 
-  
-  // Autenticación y Cabeceras
-  apiKey?: string;
-  headers?: string; 
-  
-  // Plantilla de Estructura JSON (Stringified)
   jsonStructure: string; 
-  
   isActive: boolean;
   lastModified: string;
+  
+  // Propiedad calculada en runtime (no se guarda en DB)
+  computedUrl?: string; 
+  apiKey?: string;      // API Key resuelta para el entorno actual
 }
 
 /** Notificación tipo Toast para la UI */

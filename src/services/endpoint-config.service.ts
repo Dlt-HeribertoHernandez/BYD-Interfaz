@@ -1,245 +1,197 @@
 
-import { Injectable, signal, inject } from '@angular/core';
+import { Injectable, signal, inject, computed } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { catchError, of } from 'rxjs';
-import { MappingItem, EndpointConfiguration } from '../models/app.types';
+import { catchError, tap, Observable, of, throwError } from 'rxjs';
+import { EndpointConfiguration } from '../models/app.types';
+import { NotificationService } from './notification.service';
 
-// Definición estricta de la estructura de la tabla SQL solicitada
-export interface BydModelSqlRow {
-  IdModeloVehiculo: number; 
-  Nombre: string;           
-  Codigo: string;           
-  Descripcion: string;      
-}
+export type ApiEnvironment = 'Prod' | 'Qa' | 'Dev' | 'Local';
 
 @Injectable({
   providedIn: 'root'
 })
 export class EndpointConfigService {
   private http = inject(HttpClient);
+  private notification = inject(NotificationService);
   
-  // Backend URL for configuration persistence
-  private readonly CONFIG_API_URL = 'https://api.daltonsoft-integration.com/api/configurations'; 
-
-  // Initial Mock Data
+  // URL endpoint exacto solicitado
+  private readonly API_URL = '/api/ApiConfigs'; 
+  
+  // Estado Global
+  currentEnvironment = signal<ApiEnvironment>('Prod');
+  private configsSignal = signal<EndpointConfiguration[]>([]);
+  
+  // Mock Data Inicial (Fallback por si la API está caída en demo)
   private initialConfigs: EndpointConfiguration[] = [
     {
       id: '1',
-      name: 'Carga Catálogo BYD', // Key for lookup
+      name: 'Carga Catálogo BYD',
       description: 'Inserta modelos y labor codes en la tabla maestra.',
-      url: 'https://api.daltonsoft-integration.com/api/dynamic-insert',
+      basePathProd: 'https://api.daltonsoft.com/v1',
+      basePathQa: 'https://qa-api.daltonsoft.com/v1',
+      basePathDev: 'https://dev-api.daltonsoft.com/v1',
+      basePathLocal: 'http://localhost:5000',
+      resource: '/dynamic-insert',
+      headerKey: 'X-API-Key',
+      apiKeyProd: 'prod_key_9988',
       method: 'POST',
-      targetTable: '[dbo].[BYDModelosDMS]',
-      apiKey: 'sk_prod_9988776655',
-      headers: '{\n  "Content-Type": "application/json",\n  "X-Tenant-ID": "BYD-MEX"\n}',
       isActive: true,
       lastModified: new Date().toISOString(),
-      jsonStructure: JSON.stringify({
-        configuration: {
-          process: "INSERT_BYD_MODELS",
-          target: "[dbo].[BYDModelosDMS]",
-          timestamp: "{{TIMESTAMP}}",
-          schema: ["IdModeloVehiculo", "Nombre", "Codigo", "Descripcion"]
-        },
-        data: ["{{ARRAY_DATA}}"]
-      }, null, 2)
-    },
-    {
-      id: '2',
-      name: 'Transmitir Orden', // Key for lookup
-      description: 'Envía la orden procesada a la API de Planta.',
-      url: 'https://api.byd-cloud.com/v1/service/ro-claim',
-      method: 'POST',
-      targetTable: 'N/A',
-      apiKey: 'byd_live_key_xxxx',
-      headers: '{\n  "Content-Type": "application/json",\n  "Authorization": "Bearer {{TOKEN}}"\n}',
-      isActive: true,
-      lastModified: new Date().toISOString(),
-      jsonStructure: JSON.stringify({
-        header: {
-          dealerCode: "{{CONTEXT_DEALER}}",
-          vin: "{{STRING}}",
-          roNumber: "{{STRING}}"
-        },
-        items: ["{{ARRAY_DATA}}"]
-      }, null, 2)
-    },
-    {
-      id: '7',
-      name: 'Registrar Log', // Key for lookup
-      description: 'Guarda el resultado de la transacción en LogIntegracion.',
-      url: 'https://api.daltonsoft-integration.com/api/logs/create',
-      method: 'POST',
-      targetTable: '[dbo].[LogIntegracion]',
-      isActive: true,
-      lastModified: new Date().toISOString(),
-      jsonStructure: '// POST Log Data'
-    },
-    {
-      id: '3',
-      name: 'Obtener Agencias (Dealers)', // Key for lookup
-      description: 'Obtiene el listado de agencias configuradas.',
-      url: 'http://localhost:5013/api/Dealers',
-      method: 'GET',
-      targetTable: 'N/A', 
-      apiKey: '',
-      headers: '{\n  "Accept": "application/json"\n}',
-      isActive: true,
-      lastModified: new Date().toISOString(),
-      jsonStructure: '// GET Request'
-    },
-    {
-      id: '4',
-      name: 'Obtener Mappings', // Key for lookup
-      description: 'Obtiene el listado de vinculaciones existentes.',
-      url: 'https://api.daltonsoft-integration.com/api/mappings',
-      method: 'GET',
-      targetTable: '[dbo].[BYDModelosDMS]',
-      isActive: true,
-      lastModified: new Date().toISOString(),
-      jsonStructure: '// GET Request'
-    },
-    {
-      id: '5',
-      name: 'Obtener Órdenes', // Key for lookup
-      description: 'Consulta las órdenes de servicio del DMS.',
-      url: 'https://api.daltonsoft-integration.com/api/orders',
-      method: 'GET',
-      targetTable: 'dsfacdocori',
-      isActive: true,
-      lastModified: new Date().toISOString(),
-      jsonStructure: '// GET Request params: ?startDate=...&endDate=...'
-    },
-    {
-      id: '6',
-      name: 'Obtener Logs', // Key for lookup
-      description: 'Consulta los logs de integración de la base de datos.',
-      url: 'https://api.daltonsoft-integration.com/api/logs',
-      method: 'GET',
-      targetTable: '[dbo].[LogIntegracion]',
-      isActive: true,
-      lastModified: new Date().toISOString(),
-      jsonStructure: '// GET Request params: ?startDate=...&endDate=...'
+      jsonStructure: '{}'
     }
   ];
 
-  // Signals for State
-  private configsSignal = signal<EndpointConfiguration[]>([]);
-  readonly configurations = this.configsSignal.asReadonly();
+  // --- COMPUTED: Resuelve la URL final según el entorno seleccionado ---
+  readonly configurations = computed(() => {
+    const env = this.currentEnvironment();
+    return this.configsSignal().map(config => {
+      let base = '';
+      let resolvedApiKey = '';
 
-  // Helper to get FULL Config object by partial name match
+      switch(env) {
+        case 'Prod': 
+          base = config.basePathProd;
+          resolvedApiKey = config.apiKeyProd || '';
+          break;
+        case 'Qa': 
+          base = config.basePathQa; 
+          resolvedApiKey = config.apiKeyQa || '';
+          break;
+        case 'Dev': 
+          base = config.basePathDev; 
+          break;
+        case 'Local': 
+          base = config.basePathLocal; 
+          break;
+      }
+      
+      if(!base) base = config.basePathProd || '';
+      
+      const cleanBase = base.replace(/\/$/, '');
+      const cleanRes = config.resource.startsWith('/') ? config.resource : '/' + config.resource;
+      
+      return {
+        ...config,
+        computedUrl: `${cleanBase}${cleanRes}`,
+        apiKey: resolvedApiKey
+      } as EndpointConfiguration;
+    });
+  });
+
   getConfig(nameSubstring: string): EndpointConfiguration | undefined {
-    return this.configsSignal().find(c => 
+    return this.configurations().find(c => 
       c.isActive && c.name.toLowerCase().includes(nameSubstring.toLowerCase())
     );
   }
 
-  // Legacy helper (keeping for compatibility, but getConfig is preferred)
-  getEndpointUrl(nameSubstring: string): string | undefined {
-    return this.getConfig(nameSubstring)?.url;
+  setEnvironment(env: ApiEnvironment) {
+    this.currentEnvironment.set(env);
   }
 
-  // Triggered by ApiService to avoid circular dependency
   load(isMock: boolean) {
+    // Si estamos en modo Mock, cargamos data local
     if (isMock) {
       this.configsSignal.set(this.initialConfigs);
     } else {
-      // LIVE MODE: Clear configs first to ensure we don't use stale mock data
-      this.configsSignal.set([]); 
-      
-      // PERSISTENCE: Load from SQL via Backend API
-      // STRICT MODE: If error (backend down), return EMPTY list.
-      this.http.get<EndpointConfiguration[]>(this.CONFIG_API_URL).pipe(
-        catchError(err => {
-          console.warn('Live Mode: Could not load configurations from backend. App will be empty until configs are added.', err);
-          return of([]); 
-        })
-      ).subscribe(data => {
-        if (data && data.length > 0) {
-           this.configsSignal.set(data);
+      // En modo Live, intentamos cargar de la BD real
+      this.http.get<any[]>(this.API_URL).subscribe({
+        next: (data) => {
+           if (Array.isArray(data)) {
+             // Mapear de vuelta de Hungarian a CamelCase para uso interno
+             const mapped = data.map(d => ({
+                id: d.id || crypto.randomUUID(),
+                name: d.vchNombre,
+                description: d.vchDescripcion,
+                basePathProd: d.vchBasePathProd,
+                basePathQa: d.vchBasePathQa,
+                basePathDev: d.vchBasePathDev,
+                basePathLocal: d.vchBasePathLocal,
+                resource: d.vchResource,
+                headerKey: d.vchHeaderKey,
+                apiKeyProd: d.vchApiKeyProd,
+                apiKeyQa: d.vchApiKeyQa,
+                isActive: d.bitActivo !== undefined ? d.bitActivo : true,
+                method: 'POST', // Default safe ya que no viene en la respuesta
+                jsonStructure: '{}', // Default safe
+                lastModified: d.dtCreatedAt || new Date().toISOString()
+             } as EndpointConfiguration));
+             this.configsSignal.set(mapped);
+           }
+        },
+        error: (err) => {
+           console.warn('No se pudieron cargar configs de la API, usando fallback.', err);
+           this.configsSignal.set(this.initialConfigs);
         }
       });
     }
   }
 
-  // CRUD METHODS
+  // ===========================================================================
+  //  MÉTODOS DE INTERACCIÓN CON BASE DE DATOS (POST /api/ApiConfigs)
+  // ===========================================================================
 
-  addConfig(config: Omit<EndpointConfiguration, 'id' | 'lastModified'>) {
-    const newConfig: EndpointConfiguration = {
-      ...config,
-      id: crypto.randomUUID(), 
-      lastModified: new Date().toISOString()
+  /**
+   * Crea una nueva configuración en Base de Datos.
+   * Mapea el modelo de frontend (CamelCase) al modelo de backend (Hungarian Notation).
+   */
+  createConfig(config: Omit<EndpointConfiguration, 'id' | 'lastModified' | 'computedUrl'>): Observable<any> {
+    
+    // Payload estricto según especificación
+    const payload = {
+      vchNombre: config.name,
+      vchDescripcion: config.description,
+      
+      // Rutas por entorno
+      vchBasePathProd: config.basePathProd,
+      vchBasePathQa: config.basePathQa,
+      vchBasePathDev: config.basePathDev,
+      vchBasePathLocal: config.basePathLocal,
+      
+      // Recurso y Seguridad
+      vchResource: config.resource,
+      vchApiKeyProd: config.apiKeyProd,
+      vchApiKeyQa: config.apiKeyQa,
+      vchHeaderKey: config.headerKey,
+      
+      // Campo booleano para estado
+      bitActivo: config.isActive
     };
 
-    // Optimistic / Mock Update
-    this.configsSignal.update(list => [newConfig, ...list]);
+    console.log('Enviando Payload a /api/ApiConfigs:', payload);
 
-    // Persist if in Live Environment context
-    if (this.CONFIG_API_URL.includes('localhost') || this.CONFIG_API_URL.includes('daltonsoft')) {
-       this.http.post<EndpointConfiguration>(this.CONFIG_API_URL, newConfig).pipe(
-         catchError(e => {
-           console.error('Error persisting config', e);
-           return of(null);
-         })
-       ).subscribe(saved => {
-         if (saved) {
-           this.configsSignal.update(list => 
-             list.map(c => c.id === newConfig.id ? saved : c)
-           );
-         }
-       });
-    }
-  }
-
-  updateConfig(id: string, changes: Partial<EndpointConfiguration>) {
-    this.configsSignal.update(list => 
-      list.map(c => c.id === id ? { ...c, ...changes, lastModified: new Date().toISOString() } : c)
+    return this.http.post(this.API_URL, payload).pipe(
+      tap((response: any) => {
+        // Actualización optimista en la lista local
+        const newConfig: EndpointConfiguration = {
+          ...config,
+          id: response?.id || crypto.randomUUID(),
+          lastModified: new Date().toISOString()
+        };
+        this.configsSignal.update(list => [newConfig, ...list]);
+        this.notification.show('Configuración guardada en base de datos.', 'success');
+      }),
+      catchError(err => {
+        console.error('Error al crear endpoint:', err);
+        this.notification.show('Error al guardar configuración en el servidor.', 'error');
+        return throwError(() => err);
+      })
     );
-
-    this.http.put(`${this.CONFIG_API_URL}/${id}`, changes).pipe(catchError(e => of(null))).subscribe();
   }
 
   deleteConfig(id: string) {
+    // Eliminar localmente primero (optimista)
     this.configsSignal.update(list => list.filter(c => c.id !== id));
-    this.http.delete(`${this.CONFIG_API_URL}/${id}`).pipe(catchError(e => of(null))).subscribe();
+    // Intento de borrado remoto
+    this.http.delete(`${this.API_URL}/${id}`).subscribe({
+        error: (e) => console.error('Error eliminando remoto', e)
+    });
   }
 
-  // --- SQL Structure Helpers ---
-  
-  transformToSqlStructure(items: Partial<MappingItem>[]): BydModelSqlRow[] {
-    return items.map((item, index) => ({
-      IdModeloVehiculo: index + 1, 
-      Nombre: item.vehicleModel || 'GENERICO', 
-      Codigo: item.bydCode || '', 
-      Descripcion: item.description || '' 
-    }));
-  }
-
-  buildInsertPayload(rows: BydModelSqlRow[]) {
-    const activeConfig = this.getConfig('Carga');
-    
-    const basePayload = {
-      configuration: {
-        process: "INSERT_BYD_MODELS",
-        target: "[dbo].[BYDModelosDMS]",
-        timestamp: new Date().toISOString(),
-        recordCount: rows.length,
-        schema: ['IdModeloVehiculo', 'Nombre', 'Codigo', 'Descripcion']
-      },
-      data: rows
-    };
-
-    if (activeConfig) {
-      return {
-        ...basePayload,
-        configuration: {
-          ...basePayload.configuration,
-          process: activeConfig.name, 
-          target: activeConfig.targetTable || basePayload.configuration.target,
-          apiKey: activeConfig.apiKey // Include API Key in payload if needed by backend wrapper
-        }
-      };
-    }
-    return basePayload;
+  updateConfig(id: string, changes: Partial<EndpointConfiguration>) {
+    // Actualizar localmente
+    this.configsSignal.update(list => 
+      list.map(c => c.id === id ? { ...c, ...changes, lastModified: new Date().toISOString() } : c)
+    );
+    // TODO: Implementar PUT si el backend lo soporta (actualmente solo POST especificado)
   }
 }

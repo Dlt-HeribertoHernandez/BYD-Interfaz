@@ -2,13 +2,9 @@
 import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } from '@angular/forms';
-import { EndpointConfigService } from '../../services/endpoint-config.service';
+import { EndpointConfigService, ApiEnvironment } from '../../services/endpoint-config.service';
 import { EndpointConfiguration } from '../../models/app.types';
 
-/**
- * Componente para la gestión de configuraciones de endpoints dinámicos.
- * Permite editar URLs, Headers y Payloads JSON sin modificar código fuente.
- */
 @Component({
   selector: 'app-endpoint-config',
   standalone: true,
@@ -17,43 +13,63 @@ import { EndpointConfiguration } from '../../models/app.types';
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class EndpointConfigComponent {
-  private configService = inject(EndpointConfigService);
+  public configService = inject(EndpointConfigService);
   private fb = inject(FormBuilder);
 
   configs = this.configService.configurations;
+  currentEnv = this.configService.currentEnvironment;
   
-  // Estados de UI
+  // UI States
   isEditing = signal(false);
+  isSaving = signal(false); 
   selectedConfigId = signal<string | null>(null);
+  activeTab = signal<'general' | 'envs' | 'security' | 'payload'>('general');
   
-  // Estados de Preview
+  // Preview
   showPreviewModal = signal(false);
   previewContent = signal('');
 
   configForm: FormGroup = this.fb.group({
+    // General
     name: ['', Validators.required],
     description: [''],
-    url: ['', [Validators.required, Validators.pattern('https?://.+')]],
     method: ['POST', Validators.required],
     targetTable: [''],
-    apiKey: [''],
-    headers: ['{\n  "Content-Type": "application/json"\n}'],
-    jsonStructure: ['{\n  \n}', Validators.required],
-    isActive: [true]
+    isActive: [true],
+    
+    // Paths
+    resource: ['', [Validators.required, Validators.pattern('^/.*')]],
+    basePathProd: ['', Validators.required],
+    basePathQa: [''],
+    basePathDev: [''],
+    basePathLocal: ['http://localhost:5000'],
+    
+    // Security
+    headerKey: ['X-API-Key'],
+    apiKeyProd: [''],
+    apiKeyQa: [''],
+
+    // Payload (Frontend only feature currently)
+    jsonStructure: ['{\n  \n}', Validators.required]
   });
 
   get isFormInvalid() {
     return this.configForm.invalid;
   }
 
+  setEnv(env: string) {
+    this.configService.setEnvironment(env as ApiEnvironment);
+  }
+
   startNewConfig() {
     this.selectedConfigId.set(null);
     this.isEditing.set(true);
+    this.activeTab.set('general');
     this.configForm.reset({
       method: 'POST',
       isActive: true,
-      apiKey: '',
-      headers: '{\n  "Content-Type": "application/json"\n}',
+      headerKey: 'Content-Type', 
+      basePathLocal: 'http://localhost:5000',
       jsonStructure: '{\n  "key": "value"\n}'
     });
   }
@@ -61,31 +77,55 @@ export class EndpointConfigComponent {
   selectConfig(config: EndpointConfiguration) {
     this.selectedConfigId.set(config.id);
     this.isEditing.set(true);
+    this.activeTab.set('general');
     this.configForm.patchValue({
       name: config.name,
       description: config.description,
-      url: config.url,
       method: config.method,
       targetTable: config.targetTable,
-      apiKey: config.apiKey,
-      headers: config.headers,
-      jsonStructure: config.jsonStructure,
-      isActive: config.isActive
+      isActive: config.isActive,
+      
+      resource: config.resource,
+      basePathProd: config.basePathProd,
+      basePathQa: config.basePathQa,
+      basePathDev: config.basePathDev,
+      basePathLocal: config.basePathLocal,
+      
+      headerKey: config.headerKey,
+      apiKeyProd: config.apiKeyProd,
+      apiKeyQa: config.apiKeyQa,
+      
+      jsonStructure: config.jsonStructure
     });
   }
 
   saveConfig() {
-    if (this.configForm.invalid) return;
-
-    const formValue = this.configForm.value;
-
-    if (this.selectedConfigId()) {
-      this.configService.updateConfig(this.selectedConfigId()!, formValue);
-    } else {
-      this.configService.addConfig(formValue);
+    if (this.configForm.invalid) {
+      alert('Formulario inválido. Revisa las pestañas obligatorias (Nombre, Recurso, BasePath).');
+      return;
     }
 
-    this.cancelEdit();
+    const formValue = this.configForm.value;
+    this.isSaving.set(true);
+
+    if (this.selectedConfigId()) {
+      // Actualización local
+      this.configService.updateConfig(this.selectedConfigId()!, formValue);
+      this.isSaving.set(false);
+      this.cancelEdit();
+    } else {
+      // Creación Real en Base de Datos
+      this.configService.createConfig(formValue).subscribe({
+        next: () => {
+           this.isSaving.set(false);
+           this.cancelEdit();
+        },
+        error: () => {
+           this.isSaving.set(false);
+           // El servicio ya notifica el error
+        }
+      });
+    }
   }
 
   deleteConfig(id: string, event: Event) {
@@ -103,45 +143,30 @@ export class EndpointConfigComponent {
     this.selectedConfigId.set(null);
   }
 
-  formatJson(field: 'jsonStructure' | 'headers') {
+  formatJson() {
     try {
-      const current = this.configForm.get(field)?.value;
+      const current = this.configForm.get('jsonStructure')?.value;
       const parsed = JSON.parse(current);
       this.configForm.patchValue({
-        [field]: JSON.stringify(parsed, null, 2)
+        jsonStructure: JSON.stringify(parsed, null, 2)
       });
     } catch (e) {
       alert('JSON inválido, no se puede formatear.');
     }
   }
 
-  /**
-   * Genera una simulación del JSON final reemplazando variables de plantilla
-   * con datos ficticios.
-   */
   generatePreview() {
     let raw = this.configForm.get('jsonStructure')?.value || '';
-    
-    // Reemplazo de variables de plantilla
+    // Simple template replacement for preview
     raw = raw.replace(/{{TIMESTAMP}}/g, new Date().toISOString());
     raw = raw.replace(/{{CONTEXT_DEALER}}/g, "MEX022429");
-    raw = raw.replace(/{{STRING}}/g, "SAMPLE_TEXT");
-
-    const sampleArray = JSON.stringify([
-      { "IdModeloVehiculo": 1, "Nombre": "SONG PLUS", "Codigo": "WSA3...", "Descripcion": "Sample Labor" },
-      { "IdModeloVehiculo": 2, "Nombre": "HAN EV", "Codigo": "BAT_01", "Descripcion": "Battery Check" }
-    ]);
     
-    raw = raw.replace(/{{ARRAY_DATA}}/g, sampleArray);
-    raw = raw.replace(/"{{ARRAY_DATA}}"/g, sampleArray); 
-
     try {
        const obj = JSON.parse(raw);
        this.previewContent.set(JSON.stringify(obj, null, 2));
     } catch(e) {
-       this.previewContent.set(raw + '\n\n// Nota: La vista previa generó un JSON inválido o contiene errores de sintaxis.');
+       this.previewContent.set(raw + '\n\n// Nota: JSON inválido.');
     }
-    
     this.showPreviewModal.set(true);
   }
 
