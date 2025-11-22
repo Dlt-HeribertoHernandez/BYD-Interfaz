@@ -2,8 +2,8 @@
 import { Injectable, signal, inject, effect } from '@angular/core';
 import { HttpClient, HttpParams, HttpHeaders } from '@angular/common/http';
 import { delay, of, Observable } from 'rxjs';
-import { catchError, map } from 'rxjs/operators';
-import { MappingItem, ServiceOrder, Dealer, EndpointConfiguration, IntegrationLog, TransmissionPayload } from '../models/app.types';
+import { catchError, map, tap } from 'rxjs/operators';
+import { MappingItem, ServiceOrder, Dealer, EndpointConfiguration, IntegrationLog, TransmissionPayload, ModelGroup, DaltonDocType, PlantDocType, OrderTypeMapping } from '../models/app.types';
 import { EndpointConfigService } from './endpoint-config.service';
 
 /**
@@ -156,6 +156,32 @@ export class ApiService {
     { id: '3', vchOrdenServicio: 'XCL00430', vchLog: '1 -> 190599', dtmcreated: new Date(Date.now() - 86400000).toISOString(), txtDataJson: '{"dealerCode":"MEX02231...}', vchMessage: '{"success":false,"message":"Invalid Labor Code"}', VIN: 'LGXC74C42S0029988', labourcode: 'UNK-001', Cod_TpAut: 'SOPL25BY', Desc_TpAut: 'SONG PLUS', isError: true },
   ];
 
+  // --- Mock Data for Order Type Mapper ---
+  private mockDaltonTypes: DaltonDocType[] = [
+    { code: 'P', description: 'SERVICIO KILOMETRADO / PREVENTIVO', dealerCode: '' },
+    { code: 'R', description: 'REPARACION GENERAL', dealerCode: '' },
+    { code: 'G', description: 'GARANTIA PLANTA', dealerCode: '' },
+    { code: 'I', description: 'INTERNO / ACONDICIONAMIENTO', dealerCode: '' },
+    { code: 'H', description: 'HOJALATERIA Y PINTURA', dealerCode: '' },
+    { code: 'C', description: 'CORTESIA', dealerCode: '' }
+  ];
+
+  private mockPlantTypes: PlantDocType[] = [
+    { code: 'OR', description: 'Other Repair (Reparación General / Mant.)' },
+    { code: 'WAR', description: 'Warranty Claim (Garantía)' },
+    { code: 'PDI', description: 'Pre-Delivery Inspection (Interno)' },
+    { code: 'INT', description: 'Internal Service' },
+    { code: 'ACC', description: 'Accessory Installation' }
+  ];
+
+  private mockTypeMappings: OrderTypeMapping[] = [
+    { daltonCode: 'P', plantCode: 'OR', dealerCode: 'MEX022429' },
+    { daltonCode: 'R', plantCode: 'OR', dealerCode: 'MEX022429' },
+    { daltonCode: 'G', plantCode: 'WAR', dealerCode: 'MEX022429' },
+    { daltonCode: 'I', plantCode: 'PDI', dealerCode: 'MEX022429' }
+  ];
+
+
   // ===========================================================================
   // HELPERS PRIVADOS
   // ===========================================================================
@@ -224,6 +250,35 @@ export class ApiService {
     );
   }
 
+  /**
+   * Crea una nueva Agencia (Dealer).
+   * Utiliza el endpoint "Crear Agencia" configurado dinámicamente.
+   */
+  createDealer(dealer: Omit<Dealer, 'intID'>): Observable<boolean> {
+    if (this.useMockData()) {
+       const newDealer: Dealer = {
+         ...dealer,
+         intID: this.mockDealers.length + 1
+       };
+       this.mockDealers.push(newDealer);
+       return of(true).pipe(delay(800));
+    }
+
+    const config = this.endpointConfig.getConfig('Crear Agencia') || this.endpointConfig.getConfig('Create Dealer');
+    if (!config || !config.computedUrl) {
+       console.error('Endpoint "Crear Agencia" no configurado.');
+       return of(false);
+    }
+
+    const requestUrl = config.computedUrl;
+    return this.http.post<boolean>(requestUrl, dealer, this.getHttpOptions(config)).pipe(
+       catchError(err => {
+         console.error('Error creating dealer:', err);
+         return of(false);
+       })
+    );
+  }
+
   /** Obtiene todos los mappings almacenados */
   getMappings(): Observable<MappingItem[]> {
     if (this.useMockData()) return of([...this.mockMappings]).pipe(delay(500));
@@ -270,19 +325,36 @@ export class ApiService {
     );
   }
 
-  /** Consulta órdenes de servicio con filtros de fecha y dealer */
+  /** 
+   * Obtiene Órdenes de Servicio (Vista Lista).
+   * Retorna lista plana para la vista de detalle.
+   */
   getOrders(startDate: string, endDate: string, dealerCode?: string): Observable<ServiceOrder[]> {
     const targetDealer = dealerCode || this.selectedDealerCode();
+    
+    console.log('[API] getOrders called', {
+        mock: this.useMockData(),
+        startDate,
+        endDate,
+        dealer: targetDealer
+    });
 
     if (this.useMockData()) {
       // Retornar mock con delay para simular latencia de red
-      return of(this.mockOrders).pipe(delay(600));
+      return of(this.mockOrders).pipe(
+          delay(600),
+          tap(orders => console.log('[API Mock] Orders Returned:', orders.length))
+      );
     }
     
     const config = this.endpointConfig.getConfig('Obtener Órdenes');
-    if (!config || !config.computedUrl) return of([]);
+    if (!config || !config.computedUrl) {
+        console.error('[API] Error: No endpoint config for "Obtener Órdenes"');
+        return of([]);
+    }
     
     const requestUrl = config.computedUrl;
+    console.log('[API] Fetching real orders from:', requestUrl);
 
     let params = new HttpParams()
       .set('startDate', startDate)
@@ -292,10 +364,77 @@ export class ApiService {
     const options = { ...this.getHttpOptions(config), params };
 
     return this.http.get<ServiceOrder[]>(requestUrl, options).pipe(
+      tap(data => console.log('[API] Real Orders Received:', data ? data.length : 0)),
       catchError(err => {
-        console.error('API Error (Orders):', err);
+        console.error('[API] Error (Orders):', err);
         return of([]);
       })
+    );
+  }
+
+  /**
+   * Obtiene los grupos de ítems pendientes (Vista Batch).
+   * En modo Mock: Calcula la agrupación localmente.
+   * En modo Live: Llama a un endpoint específico del backend que ya retorna los datos agrupados.
+   */
+  getPendingModelGroups(dealerCode?: string): Observable<ModelGroup[]> {
+    const targetDealer = dealerCode || this.selectedDealerCode();
+
+    if (this.useMockData()) {
+       // Simulación de agrupación local para modo Demo
+       const groups = new Map<string, ModelGroup>();
+       
+       this.mockOrders.forEach(order => {
+         if (order.status === 'Transmitted' || order.status === 'Completed') return;
+
+         const modelName = (order.modelDescRaw || order.modelCodeRaw || 'GENERICO').split(' ')[0] + ' ' + ((order.modelDescRaw || '').split(' ')[1] || ''); 
+         const year = order.year || 'N/A';
+         const groupId = `${modelName.trim()}|${year}`;
+
+         if (!groups.has(groupId)) {
+           groups.set(groupId, { 
+               groupId, 
+               modelName: modelName.trim(), 
+               year, 
+               count: 0, 
+               items: [] 
+           });
+         }
+         const group = groups.get(groupId)!;
+         
+         order.items.forEach(item => {
+           if (!item.isLinked) {
+              group.items.push({
+                orderId: order.id,
+                orderNumber: order.orderNumber,
+                vin: order.vin,
+                item: item
+              });
+              group.count++;
+           }
+         });
+       });
+       
+       const result = Array.from(groups.values()).filter(g => g.count > 0).sort((a, b) => a.groupId.localeCompare(b.groupId));
+       return of(result).pipe(delay(700));
+    }
+
+    // Implementación Live: Endpoint Dedicado
+    const config = this.endpointConfig.getConfig('Grupos Pendientes') || this.endpointConfig.getConfig('Pending Groups');
+    if (!config || !config.computedUrl) {
+       console.warn('Endpoint de Grupos Pendientes no configurado en modo Live.');
+       return of([]);
+    }
+
+    const requestUrl = config.computedUrl;
+    const params = new HttpParams().set('dealerCode', targetDealer);
+    const options = { ...this.getHttpOptions(config), params };
+
+    return this.http.get<ModelGroup[]>(requestUrl, options).pipe(
+       catchError(err => {
+          console.error('API Error (Pending Groups):', err);
+          return of([]);
+       })
     );
   }
 
@@ -321,7 +460,6 @@ export class ApiService {
         });
       });
       
-      // Dato fake solo para demostración si no hay coincidencias
       if (history.length === 0 && Math.random() > 0.5) {
          history.push({
             orderRef: 'XCL00399',
@@ -334,7 +472,6 @@ export class ApiService {
       return of(history).pipe(delay(400));
     }
     
-    // Implementación Real:
     const config = this.endpointConfig.getConfig('Historial Uso');
     if (!config || !config.computedUrl) return of([]);
     
@@ -428,8 +565,6 @@ export class ApiService {
       return of(true).pipe(delay(800));
     }
 
-    // Estrategia de URL: Preferir endpoint dedicado 'Vincular Batch', 
-    // sino fallback inteligente reemplazando el path del endpoint 'Vincular' simple.
     let config = this.endpointConfig.getConfig('Vincular Batch');
     let requestUrl = config?.computedUrl;
 
@@ -553,6 +688,98 @@ export class ApiService {
     
     return this.http.post<boolean>(requestUrl, payload, this.getHttpOptions(config)).pipe(
       catchError(() => of(false))
+    );
+  }
+
+  // ===========================================================================
+  // MÉTODOS DE MAPEO DE TIPOS DE ORDEN
+  // ===========================================================================
+
+  /** Obtiene los tipos de documento activos en Dalton para la agencia seleccionada */
+  getDaltonDocTypes(dealerCode: string): Observable<DaltonDocType[]> {
+    if (this.useMockData()) return of(this.mockDaltonTypes).pipe(delay(300));
+
+    const config = this.endpointConfig.getConfig('Tipos Dalton');
+    if (!config || !config.computedUrl) return of([]);
+
+    const params = new HttpParams().set('dealerCode', dealerCode);
+    return this.http.get<DaltonDocType[]>(config.computedUrl, { ...this.getHttpOptions(config), params }).pipe(
+      catchError(() => of([]))
+    );
+  }
+
+  /** Crea un nuevo tipo de orden Dalton */
+  createDaltonDocType(docType: DaltonDocType): Observable<boolean> {
+    if (this.useMockData()) {
+       this.mockDaltonTypes.push(docType);
+       return of(true).pipe(delay(500));
+    }
+
+    const config = this.endpointConfig.getConfig('Crear Tipo Dalton') || this.endpointConfig.getConfig('Tipos Dalton');
+    if (!config || !config.computedUrl) return of(false);
+
+    return this.http.post<boolean>(config.computedUrl, docType, this.getHttpOptions(config)).pipe(
+      catchError(() => of(false))
+    );
+  }
+
+  /** Obtiene los tipos de documento oficiales de Planta (BYD) */
+  getPlantDocTypes(): Observable<PlantDocType[]> {
+    if (this.useMockData()) return of(this.mockPlantTypes).pipe(delay(300));
+
+    const config = this.endpointConfig.getConfig('Tipos Planta');
+    if (!config || !config.computedUrl) return of([]);
+
+    return this.http.get<PlantDocType[]>(config.computedUrl, this.getHttpOptions(config)).pipe(
+      catchError(() => of([]))
+    );
+  }
+
+  /** Crea un nuevo tipo de orden Planta */
+  createPlantDocType(docType: PlantDocType): Observable<boolean> {
+    if (this.useMockData()) {
+       this.mockPlantTypes.push(docType);
+       return of(true).pipe(delay(500));
+    }
+
+    const config = this.endpointConfig.getConfig('Crear Tipo Planta') || this.endpointConfig.getConfig('Tipos Planta');
+    if (!config || !config.computedUrl) return of(false);
+
+    return this.http.post<boolean>(config.computedUrl, docType, this.getHttpOptions(config)).pipe(
+      catchError(() => of(false))
+    );
+  }
+
+  /** Obtiene el mapeo guardado actualmente */
+  getOrderTypeMappings(dealerCode: string): Observable<OrderTypeMapping[]> {
+    if (this.useMockData()) {
+       return of(this.mockTypeMappings.filter(m => m.dealerCode === dealerCode)).pipe(delay(300));
+    }
+
+    const config = this.endpointConfig.getConfig('Obtener Mapeo Tipos');
+    if (!config || !config.computedUrl) return of([]);
+
+    const params = new HttpParams().set('dealerCode', dealerCode);
+    return this.http.get<OrderTypeMapping[]>(config.computedUrl, { ...this.getHttpOptions(config), params }).pipe(
+      catchError(() => of([]))
+    );
+  }
+
+  /** Guarda o actualiza el mapeo de tipos */
+  saveOrderTypeMappings(dealerCode: string, mappings: OrderTypeMapping[]): Observable<boolean> {
+    if (this.useMockData()) {
+       // Limpiar existentes para el dealer y agregar nuevos
+       this.mockTypeMappings = this.mockTypeMappings.filter(m => m.dealerCode !== dealerCode);
+       this.mockTypeMappings.push(...mappings);
+       return of(true).pipe(delay(600));
+    }
+
+    const config = this.endpointConfig.getConfig('Guardar Mapeo Tipos');
+    if (!config || !config.computedUrl) return of(false);
+
+    const payload = { dealerCode, mappings };
+    return this.http.post<boolean>(config.computedUrl, payload, this.getHttpOptions(config)).pipe(
+       catchError(() => of(false))
     );
   }
 }

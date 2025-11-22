@@ -57,6 +57,32 @@ export interface OrderTypeConfig {
 }
 
 /**
+ * NUEVO: Tipo de Documento en Dalton (DMS)
+ */
+export interface DaltonDocType {
+  code: string;       // Ej: 'P', 'G', 'I'
+  description: string;// Ej: 'Preventivo', 'Garantía', 'Interno'
+  dealerCode: string;
+}
+
+/**
+ * NUEVO: Tipo de Documento en Planta (BYD)
+ */
+export interface PlantDocType {
+  code: string;       // Ej: 'OR', 'WAR', 'PDI'
+  description: string;// Ej: 'Other Repair', 'Warranty Claim'
+}
+
+/**
+ * NUEVO: Mapeo de Equivalencia entre Dalton y Planta
+ */
+export interface OrderTypeMapping {
+  daltonCode: string; // PK
+  plantCode: string;  // FK to PlantDocType
+  dealerCode: string;
+}
+
+/**
  * Regla de Negocio para la importación y transformación de datos.
  */
 export interface BusinessRule {
@@ -145,6 +171,24 @@ export interface OrderLog {
   timestamp: string;
   message: string;
   status: OrderStatus;
+}
+
+/**
+ * Estructura de respuesta para el endpoint de Agrupación Masiva (Batch).
+ */
+export interface ModelGroup {
+  groupId: string; // Llave compuesta: MODELO + AÑO (ej. "SONG PLUS|2025")
+  modelName: string;
+  year: string;
+  count: number;
+  items: ModelGroupItem[];
+}
+
+export interface ModelGroupItem {
+  orderId: string;
+  orderNumber: string;
+  vin: string;
+  item: ServiceOrderItem;
 }
 
 /**

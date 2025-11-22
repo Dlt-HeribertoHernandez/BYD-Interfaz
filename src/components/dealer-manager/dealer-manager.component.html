@@ -1,0 +1,124 @@
+
+<div class="flex flex-col h-full gap-6 animate-fade-in">
+  
+  <!-- Header -->
+  <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-colors">
+    <div>
+      <h2 class="text-xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
+         <i class="fas fa-building text-blue-600 dark:text-blue-400"></i> Gestión de Agencias
+      </h2>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Registra y administra los puntos de servicio (Dealers) conectados a la plataforma.</p>
+    </div>
+    
+    <button (click)="loadDealers()" class="p-2 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+       <i class="fas fa-sync-alt" [class.fa-spin]="isLoading()"></i> Actualizar
+    </button>
+  </div>
+
+  <div class="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
+    
+    <!-- LEFT: Dealer List -->
+    <div class="lg:w-5/12 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden transition-colors">
+       <div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 flex justify-between items-center">
+          <span class="text-xs font-bold text-gray-500 uppercase">Agencias Registradas ({{ dealers().length }})</span>
+       </div>
+       <div class="overflow-y-auto flex-1 p-3 space-y-3 bg-gray-50 dark:bg-gray-900/30">
+          @for(dealer of dealers(); track dealer.dealerCode) {
+             <div class="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700 flex items-start gap-4 hover:shadow-md transition-all">
+                <div class="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold text-lg shrink-0">
+                   {{ getInitial(dealer.dealerName) }}
+                </div>
+                <div class="flex-1 min-w-0">
+                   <h3 class="font-bold text-gray-800 dark:text-white text-sm truncate">{{ dealer.dealerName }}</h3>
+                   <div class="flex items-center gap-2 mt-1">
+                      <span class="text-[10px] font-mono bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded border dark:border-gray-600 dark:text-gray-300">{{ dealer.dealerCode }}</span>
+                      <span class="text-[10px] text-gray-400 truncate">ID: {{ dealer.intID }}</span>
+                   </div>
+                   <div class="mt-2 text-[10px] text-gray-400 font-mono truncate">
+                      Key: {{ dealer.dealerKey.substring(0, 8) }}...
+                   </div>
+                </div>
+                <div class="text-green-500 text-xs" title="Activo"><i class="fas fa-circle"></i></div>
+             </div>
+          }
+          @if(dealers().length === 0 && !isLoading()) {
+             <div class="p-8 text-center text-gray-400">
+                <i class="fas fa-city text-3xl mb-2 opacity-30"></i>
+                <p class="text-sm">No hay agencias registradas.</p>
+             </div>
+          }
+       </div>
+    </div>
+
+    <!-- RIGHT: Registration Form -->
+    <div class="lg:w-7/12 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden">
+       <div class="p-4 bg-gray-900 text-white flex items-center gap-2">
+          <i class="fas fa-plus-circle text-blue-400"></i>
+          <span class="font-bold text-sm uppercase tracking-wide">Alta de Nueva Agencia</span>
+       </div>
+       
+       <div class="flex-1 p-6 overflow-y-auto">
+          <form [formGroup]="dealerForm" (ngSubmit)="saveDealer()" class="space-y-6">
+             
+             <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <!-- Code -->
+                <div>
+                   <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Código Agencia (Dealer Code)</label>
+                   <div class="relative">
+                      <i class="fas fa-hashtag absolute left-3 top-3 text-gray-400 text-xs"></i>
+                      <input type="text" formControlName="dealerCode" placeholder="Ej. MEX022429"
+                         class="w-full pl-9 pr-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-mono font-bold text-blue-600 dark:text-blue-400 outline-none focus:ring-2 focus:ring-blue-500">
+                   </div>
+                   @if(dealerForm.get('dealerCode')?.invalid && dealerForm.get('dealerCode')?.touched) {
+                      <p class="text-red-500 text-[10px] mt-1">Código requerido (min 3 caracteres).</p>
+                   }
+                </div>
+
+                <!-- Repair Store -->
+                <div>
+                   <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Repair Store Code (Opcional)</label>
+                   <input type="text" formControlName="vchRepairStoreCode" placeholder="Autogenerado si vacío"
+                      class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:text-white">
+                </div>
+             </div>
+
+             <!-- Name -->
+             <div>
+                <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Nombre Comercial</label>
+                <input type="text" formControlName="dealerName" placeholder="Ej. BYD Carretera 57-Dalton"
+                   class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:text-white">
+             </div>
+
+             <!-- Security Keys -->
+             <div class="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600 space-y-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase flex items-center gap-2"><i class="fas fa-lock"></i> Credenciales API</h4>
+                
+                <div>
+                   <label class="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Application ID (AppID)</label>
+                   <input type="text" formControlName="appId" 
+                      class="w-full p-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-mono outline-none dark:text-white">
+                </div>
+                
+                <div>
+                   <label class="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Dealer Secret Key</label>
+                   <input type="text" formControlName="dealerKey" 
+                      class="w-full p-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-mono outline-none dark:text-white">
+                </div>
+             </div>
+
+             <div class="pt-4 flex justify-end">
+                <button type="submit" [disabled]="dealerForm.invalid || isSubmitting()"
+                   class="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg transform hover:translate-y-[-1px] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                   @if(isSubmitting()) {
+                      <i class="fas fa-circle-notch fa-spin"></i> Guardando...
+                   } @else {
+                      <i class="fas fa-save"></i> Registrar Agencia
+                   }
+                </button>
+             </div>
+          </form>
+       </div>
+    </div>
+
+  </div>
+</div>

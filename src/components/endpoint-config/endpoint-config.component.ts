@@ -3,6 +3,7 @@ import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/cor
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } from '@angular/forms';
 import { EndpointConfigService, ApiEnvironment } from '../../services/endpoint-config.service';
+import { ApiService } from '../../services/api.service';
 import { EndpointConfiguration } from '../../models/app.types';
 
 @Component({
@@ -14,6 +15,7 @@ import { EndpointConfiguration } from '../../models/app.types';
 })
 export class EndpointConfigComponent {
   public configService = inject(EndpointConfigService);
+  private apiService = inject(ApiService);
   private fb: FormBuilder = inject(FormBuilder);
 
   configs = this.configService.configurations;
@@ -59,6 +61,10 @@ export class EndpointConfigComponent {
 
   setEnv(env: string) {
     this.configService.setEnvironment(env as ApiEnvironment);
+  }
+
+  reloadConfigs() {
+    this.configService.load(this.apiService.useMockData());
   }
 
   startNewConfig() {
@@ -108,30 +114,33 @@ export class EndpointConfigComponent {
     const formValue = this.configForm.value;
     this.isSaving.set(true);
 
-    if (this.selectedConfigId()) {
-      // Actualización local
-      this.configService.updateConfig(this.selectedConfigId()!, formValue);
-      this.isSaving.set(false);
-      this.cancelEdit();
+    const configId = this.selectedConfigId();
+
+    if (configId) {
+      // Actualización (PUT)
+      this.configService.updateConfig(configId, { ...formValue, id: configId }).subscribe({
+        next: () => {
+           this.isSaving.set(false);
+           this.cancelEdit();
+        },
+        error: () => this.isSaving.set(false)
+      });
     } else {
-      // Creación Real en Base de Datos
+      // Creación (POST)
       this.configService.createConfig(formValue).subscribe({
         next: () => {
            this.isSaving.set(false);
            this.cancelEdit();
         },
-        error: () => {
-           this.isSaving.set(false);
-           // El servicio ya notifica el error
-        }
+        error: () => this.isSaving.set(false)
       });
     }
   }
 
   deleteConfig(id: string, event: Event) {
     event.stopPropagation();
-    if (confirm('¿Estás seguro de eliminar esta configuración?')) {
-      this.configService.deleteConfig(id);
+    if (confirm('¿Estás seguro de eliminar esta configuración? Se marcará como inactiva.')) {
+      this.configService.deleteConfig(id).subscribe();
       if (this.selectedConfigId() === id) {
         this.cancelEdit();
       }

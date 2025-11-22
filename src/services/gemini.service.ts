@@ -1,7 +1,8 @@
 
-import { Injectable } from '@angular/core';
+import { Injectable, signal, inject } from '@angular/core';
 import { GoogleGenAI, Type } from '@google/genai';
 import { MappingItem, AiSuggestion } from '../models/app.types';
+import { NotificationService } from './notification.service';
 
 /**
  * Servicio de Inteligencia Artificial (Google Gemini).
@@ -12,21 +13,63 @@ import { MappingItem, AiSuggestion } from '../models/app.types';
   providedIn: 'root'
 })
 export class GeminiService {
-  private ai: GoogleGenAI;
+  private notification = inject(NotificationService);
+  private ai: GoogleGenAI | null = null;
+
+  // Señal pública para que los componentes sepan si la IA está lista para usarse
+  isAvailable = signal<boolean>(false);
 
   constructor() {
-    // Se asume que process.env.API_KEY está inyectado por el entorno de compilación
-    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    this.initializeClient();
+  }
+
+  private initializeClient() {
+    let apiKey = '';
+    
+    // Protección contra ReferenceError si process no está definido en el entorno
+    try {
+      apiKey = process.env.API_KEY || '';
+    } catch (e) {
+      console.warn('[GeminiService] No se pudo acceder a las variables de entorno.');
+    }
+
+    // Validación básica de configuración
+    if (!apiKey || apiKey.length < 10 || apiKey.includes('YOUR_API_KEY')) {
+      console.warn('[GeminiService] API Key no detectada o inválida. Las funciones de IA estarán deshabilitadas.');
+      this.isAvailable.set(false);
+      return;
+    }
+
+    try {
+      this.ai = new GoogleGenAI({ apiKey: apiKey });
+      this.isAvailable.set(true);
+    } catch (err) {
+      console.error('[GeminiService] Error inicializando cliente:', err);
+      this.isAvailable.set(false);
+    }
+  }
+
+  /**
+   * Helper para notificar al usuario/desarrollador si falta configuración
+   */
+  private checkAvailability(): boolean {
+    if (!this.isAvailable() || !this.ai) {
+      this.notification.show(
+        '⚠️ IA No Configurada: Falta "API_KEY" en variables de entorno.', 
+        'warning', 
+        6000
+      );
+      return false;
+    }
+    return true;
   }
 
   /**
    * NUEVO: Enriquecimiento Masivo.
    * Toma un lote de items crudos y devuelve versiones mejoradas.
-   * 1. Estandariza descripciones a Español comercial.
-   * 2. Asigna categorías automáticas.
    */
   async enrichCatalogBatch(items: MappingItem[]): Promise<{ id: string, cleanDescription: string, category: string, tags: string[] }[]> {
-    if (!process.env.API_KEY) return [];
+    if (!this.checkAvailability()) return [];
 
     // Limitamos el contexto para evitar errores de payload grande (Top 20 items a la vez recomendado)
     const batch = items.slice(0, 25).map(item => ({
@@ -65,7 +108,7 @@ export class GeminiService {
     };
 
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.ai!.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: prompt,
         config: {
@@ -79,28 +122,22 @@ export class GeminiService {
       return JSON.parse(jsonText);
     } catch (error) {
       console.error('Gemini Enrichment Error:', error);
+      this.notification.show('Error de conexión con Gemini API.', 'error');
       return [];
     }
   }
 
   /**
-   * Traduce una descripción técnica (generalmente en Español "sucio" del DMS)
-   * a Inglés Técnico y extrae palabras clave (Tags) para búsqueda difusa.
+   * Traduce una descripción técnica a palabras clave.
    */
   async translateToKeywords(text: string): Promise<{ translation: string; keywords: string[] }> {
-    if (!process.env.API_KEY) return { translation: '', keywords: [] };
+    if (!this.checkAvailability()) return { translation: '', keywords: [] };
 
     const prompt = `
       You are an expert automotive translator and parts specialist.
       Task: 
       1. Translate the following Service Description from Spanish to Technical English.
       2. Extract a broad list of 15 to 20 keywords/tags to help find this item in a master catalog.
-      
-      CRITICAL RULES FOR KEYWORDS (MAXIMIZE MATCHING POTENTIAL):
-      1. **Deconstruct everything**: If "Smart Card", return ["Smart Card", "Card", "Smart"].
-      2. **Singular AND Plural**: If "Lights", YOU MUST ALSO include "Light". If "Brakes", include "Brake".
-      3. **Synonyms & Verbs**: "Replace" -> ["Replacement", "Changing", "Renew", "Install"].
-      4. **Abbreviations**: Include standard automotive acronyms (e.g., "Assembly" -> "Assy", "Right" -> "RH", "Left" -> "LH").
       
       Input Description: "${text}"
       
@@ -111,7 +148,6 @@ export class GeminiService {
       }
     `;
 
-    // Schema estricto para garantizar que recibimos JSON válido
     const schema = {
       type: Type.OBJECT,
       properties: {
@@ -122,7 +158,7 @@ export class GeminiService {
     };
 
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.ai!.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: prompt,
         config: {
@@ -143,14 +179,13 @@ export class GeminiService {
 
   /**
    * Sugiere mapeos potenciales utilizando "Few-Shot Learning".
-   * Se mejora la lógica para manejar descripciones genéricas de forma robusta.
    */
   async suggestMapping(
     daltonDescription: string, 
     daltonCode: string, 
     history: MappingItem[]
   ): Promise<AiSuggestion[]> {
-    if (!process.env.API_KEY) return [];
+    if (!this.checkAvailability()) return [];
 
     // Contexto: Enviamos ejemplos exitosos previos
     const contextSample = history
@@ -172,21 +207,13 @@ export class GeminiService {
         ${contextSample}
       ]
       
-      INSTRUCCIONES CRÍTICAS DE RAZONAMIENTO:
+      INSTRUCCIONES:
       1. **Búsqueda de Patrones**: Analiza la 'Base de Conocimiento'. Si hay algo idéntico, úsalo como base.
-      
-      2. **Manejo de Ambigüedad (IMPORTANTE)**: 
-         - Si la descripción es VAGA o GENÉRICA (ej. "Revisión", "Ruido", "Servicio", "Diagnóstico", "Check engine") y no hay contexto suficiente:
-         - NO inventes un código de parte específica (no adivines frenos si solo dice "Ruido").
-         - Sugiere un código genérico administrativo o de diagnóstico (ej. "DIAG_GEN", "MO-GEN", "GENERAL_INSPECTION").
-         - Marca la confianza (confidence) como "Low".
-         - En el campo 'reasoning', explica claramente: "Descripción insuficiente para determinar código exacto. Se sugiere código genérico."
-
-      3. **Preferencia de Tipo**: Si no menciona explícitamente "Cambio" o "Reemplazo", asume que es 'Labor' (Mano de obra), no 'Repair'.
-      
+      2. **Manejo de Ambigüedad**: Si la descripción es VAGA (ej. "Revisión", "Ruido"), sugiere un código genérico y marca confianza "Low".
+      3. **Preferencia de Tipo**: Si no menciona explícitamente "Cambio" o "Reemplazo", asume 'Labor'.
       4. **Formato**: Genera hasta 3 sugerencias.
       
-      Retorna JSON estricto bajo el schema proporcionado.
+      Retorna JSON estricto.
     `;
 
     const schema = {
@@ -204,13 +231,13 @@ export class GeminiService {
     };
 
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.ai!.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
           responseSchema: schema,
-          temperature: 0.3 // Bajamos temperatura para ser más conservadores y analíticos
+          temperature: 0.3
         }
       });
 

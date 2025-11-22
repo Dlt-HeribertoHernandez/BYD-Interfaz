@@ -23,7 +23,7 @@ import { MappingItem } from '../models/app.types';
 export class MappingLinkerComponent {
   // Inyección de Dependencias (Angular 16+ style)
   public store = inject(StoreService);
-  private gemini = inject(GeminiService);
+  public gemini = inject(GeminiService);
   private notification = inject(NotificationService);
   private fb: FormBuilder = inject(FormBuilder);
 
@@ -31,6 +31,9 @@ export class MappingLinkerComponent {
   // Data proviene del Store (Read-only)
   mappings = this.store.mappings;
   
+  // Wrapper computado para el estado de la IA (corrige error en template)
+  isAiReady = computed(() => this.gemini.isAvailable());
+
   // Estado UI local (Mutable)
   selectedItemId = signal<string | null>(null);
   isEditing = signal(false);
@@ -244,6 +247,9 @@ export class MappingLinkerComponent {
   // --- FUNCIONES AI ---
 
   async runAiNormalization() {
+    // La comprobación de disponibilidad está ahora encapsulada en el servicio,
+    // pero el método retornará vacío si falla.
+    
     const items = this.mappings().slice(0, 20); // Límite demo
     if (items.length === 0) return;
 
@@ -251,6 +257,12 @@ export class MappingLinkerComponent {
     try {
       const enriched = await this.gemini.enrichCatalogBatch(items);
       
+      if (enriched.length === 0) {
+         // Si retorna vacío, el servicio ya mostró la notificación de error (API Key faltante, etc.)
+         this.isAnalyzing.set(false);
+         return;
+      }
+
       let improvedCount = 0;
       enriched.forEach(e => {
          const original = items.find(i => i.id === e.id);

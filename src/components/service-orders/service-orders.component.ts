@@ -7,25 +7,8 @@ import { StoreService } from '../../services/store.service';
 import { GeminiService } from '../../services/gemini.service';
 import { OrderStrategyService } from '../../services/order-strategy.service';
 import { BusinessRulesService } from '../../services/business-rules.service';
-import { ServiceOrder, ServiceOrderItem, MappingItem, TransmissionPayload } from '../../models/app.types';
+import { ServiceOrder, ServiceOrderItem, MappingItem, TransmissionPayload, ModelGroup } from '../../models/app.types';
 import { NotificationService } from '../../services/notification.service';
-
-/**
- * ModelGroup: Estructura interna para agrupar órdenes en el modo "Batch".
- * Clave para la eficiencia de la UI al renderizar miles de items.
- */
-interface ModelGroup {
-  groupId: string; // Llave compuesta: MODELO + AÑO (ej. "SONG PLUS|2025")
-  modelName: string;
-  year: string;
-  count: number;
-  items: {
-    orderId: string;
-    orderNumber: string;
-    vin: string;
-    item: ServiceOrderItem;
-  }[];
-}
 
 /**
  * ServiceOrdersComponent
@@ -59,7 +42,9 @@ export class ServiceOrdersComponent {
   searchOrderNumber = signal<string>('');
 
   // --- ESTADO DE DATOS ---
-  rawOrders = signal<ServiceOrder[]>([]);
+  rawOrders = signal<ServiceOrder[]>([]); // Solo para modo lista
+  pendingItemsByModel = signal<ModelGroup[]>([]); // Solo para modo batch (Traido de endpoint)
+  
   isLoading = signal(false);
   selectedOrder = signal<ServiceOrder | null>(null);
   
@@ -90,64 +75,6 @@ export class ServiceOrdersComponent {
       list = list.filter(o => o.orderNumber.toLowerCase().includes(term));
     }
     return list;
-  });
-
-  /**
-   * LÓGICA CENTRAL DE AGRUPAMIENTO (BATCH ENGINE)
-   * ---------------------------------------------
-   * Transforma una lista plana de órdenes en grupos jerárquicos basados en Modelo y Año.
-   * Esto permite al usuario procesar "Todos los Song Plus 2025" de una sola vez.
-   * 
-   * Arquitectura (Strategy Pattern implícito):
-   * 1. Filtrado Previo: Se ignoran órdenes ya transmitidas.
-   * 2. Normalización: Extrae y limpia nombres de modelo para agrupar variaciones.
-   * 3. Whitelist (Reglas de Negocio): Filtra items irrelevantes (ej. items administrativos)
-   *    usando BusinessRulesService.
-   */
-  pendingItemsByModel = computed<ModelGroup[]>(() => {
-    const groups = new Map<string, ModelGroup>();
-    
-    this.rawOrders().forEach(order => {
-      if (order.status === 'Transmitted' || order.status === 'Completed') return;
-
-      // Normalización: Extraer nombre base del modelo
-      // Ej: "SONG PLUS 2025 BC DM-I..." -> "SONG PLUS"
-      const modelName = (order.modelDescRaw || order.modelCodeRaw || 'GENERICO').split(' ')[0] + ' ' + ((order.modelDescRaw || '').split(' ')[1] || ''); 
-      const year = order.year || 'N/A';
-      
-      // Generar ID único de grupo
-      const groupId = `${modelName.trim()}|${year}`;
-
-      if (!groups.has(groupId)) {
-        groups.set(groupId, { 
-            groupId, 
-            modelName: modelName.trim(), 
-            year, 
-            count: 0, 
-            items: [] 
-        });
-      }
-
-      const group = groups.get(groupId)!;
-
-      // Agregar items pendientes que pasen las reglas de negocio (whitelist)
-      order.items.forEach(item => {
-        if (!item.isLinked && this.rulesService.isItemRelevant(item.code)) {
-           group.items.push({
-             orderId: order.id,
-             orderNumber: order.orderNumber,
-             vin: order.vin,
-             item: item
-           });
-           group.count++;
-        }
-      });
-    });
-
-    // Convertir Map a Array y ordenar alfabéticamente
-    return Array.from(groups.values())
-      .filter(g => g.count > 0)
-      .sort((a, b) => a.groupId.localeCompare(b.groupId));
   });
 
   // Búsqueda inteligente en el catálogo compatible con el grupo seleccionado
@@ -187,28 +114,63 @@ export class ServiceOrdersComponent {
   });
 
   constructor() {
-    // Recargar órdenes si cambia la agencia seleccionada
+    console.log('ServiceOrdersComponent: Initialized');
+    
+    // Recargar datos si cambia la agencia seleccionada o el modo de vista
     effect(() => {
       const dealer = this.api.selectedDealerCode();
-      if (dealer) this.fetchOrders();
+      const mode = this.viewMode(); // Dependencia
+      console.log('ServiceOrdersComponent: Context Changed ->', { dealer, mode });
+      if (dealer) {
+        this.loadDashboardData();
+      }
     });
   }
 
-  fetchOrders() {
+  /**
+   * Carga centralizada de datos. 
+   * Decide qué endpoint llamar basándose en la vista activa (List vs Batch).
+   */
+  loadDashboardData() {
     const currentDealer = this.api.selectedDealerCode();
     if (!currentDealer) return;
 
     this.isLoading.set(true);
-    this.api.getOrders(this.startDate, this.endDate, currentDealer).subscribe({
-      next: (orders) => {
-        this.rawOrders.set(orders);
-        this.isLoading.set(false);
-      },
-      error: () => {
-        this.rawOrders.set([]);
-        this.isLoading.set(false);
-      }
-    });
+
+    if (this.viewMode() === 'batch') {
+       // Modo Batch: Cargar grupos pendientes
+       console.log('Fetching Pending Groups for Batch View');
+       this.api.getPendingModelGroups(currentDealer).subscribe({
+          next: (groups) => {
+             this.pendingItemsByModel.set(groups);
+             this.isLoading.set(false);
+          },
+          error: (e) => {
+             console.error('Error loading pending groups', e);
+             this.pendingItemsByModel.set([]);
+             this.isLoading.set(false);
+          }
+       });
+    } else {
+       // Modo Lista: Cargar órdenes completas
+       console.log('Fetching Full Orders for List View');
+       this.api.getOrders(this.startDate, this.endDate, currentDealer).subscribe({
+          next: (orders) => {
+            this.rawOrders.set(orders);
+            this.isLoading.set(false);
+          },
+          error: (err) => {
+            console.error('Error loading orders', err);
+            this.rawOrders.set([]);
+            this.isLoading.set(false);
+          }
+       });
+    }
+  }
+
+  // Alias para el botón de UI
+  fetchOrders() {
+     this.loadDashboardData();
   }
 
   // --- ACCIONES UI ---
@@ -281,22 +243,13 @@ export class ServiceOrdersComponent {
 
     this.api.linkOrderItemsBatch(itemsToLink, mapping.bydCode, mapping.bydType).subscribe(success => {
        if(success) {
-          // Actualización optimista del estado local
-          this.rawOrders.update(orders => orders.map(o => {
-             const updatedItems = o.items.map(i => {
-                if(itemsToLink.some(link => link.daltonCode === i.code)) {
-                   return { ...i, isLinked: true, linkedBydCode: mapping.bydCode };
-                }
-                return i;
-             });
-             return { ...o, items: updatedItems };
-          }));
-          
           this.notification.show(`¡${itemsToLink.length} ítems vinculados exitosamente!`, 'success');
           this.selectedBatchItems.set(new Set());
           this.selectedBatchTargetCode.set(null);
           
-          // Si el grupo queda vacío, deseleccionar
+          // Recargar los grupos para reflejar los cambios
+          this.loadDashboardData();
+
           if(this.getActiveGroupItems().length === 0) {
              this.selectedBatchModelGroup.set(null);
           }
@@ -370,7 +323,7 @@ export class ServiceOrdersComponent {
         if(success) {
            this.notification.show('Orden transmitida', 'success');
            this.closeTransmitModal();
-           this.fetchOrders(); // Recargar estado
+           this.loadDashboardData(); // Recargar estado
         } else {
            this.notification.show('Error en transmisión', 'error');
         }

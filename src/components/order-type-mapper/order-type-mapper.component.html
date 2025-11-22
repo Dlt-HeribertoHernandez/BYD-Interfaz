@@ -1,0 +1,221 @@
+
+<div class="flex flex-col h-full gap-6 animate-fade-in">
+  
+  <!-- Header -->
+  <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-colors">
+    <div>
+      <h2 class="text-xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
+         <i class="fas fa-exchange-alt text-indigo-600 dark:text-indigo-400"></i> Tipos de Orden
+      </h2>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Vincula los folios internos de la agencia (DMS) con los tipos oficiales de Planta (BYD).</p>
+    </div>
+
+    <!-- Tabs -->
+    <div class="flex bg-gray-100 dark:bg-gray-700 p-1 rounded-lg">
+       <button (click)="activeTab.set('mapping')" 
+          class="px-4 py-2 rounded-md text-sm font-bold transition-all flex items-center gap-2"
+          [class]="activeTab() === 'mapping' ? 'bg-white dark:bg-gray-600 text-indigo-600 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'">
+          <i class="fas fa-link"></i> Equivalencias
+       </button>
+       <button (click)="activeTab.set('dalton')" 
+          class="px-4 py-2 rounded-md text-sm font-bold transition-all flex items-center gap-2"
+          [class]="activeTab() === 'dalton' ? 'bg-white dark:bg-gray-600 text-indigo-600 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'">
+          <i class="fas fa-building"></i> Catálogo Dalton
+       </button>
+       <button (click)="activeTab.set('plant')" 
+          class="px-4 py-2 rounded-md text-sm font-bold transition-all flex items-center gap-2"
+          [class]="activeTab() === 'plant' ? 'bg-white dark:bg-gray-600 text-indigo-600 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'">
+          <i class="fas fa-industry"></i> Catálogo Planta
+       </button>
+    </div>
+  </div>
+
+  <!-- Workspace -->
+  <div class="flex-1 min-h-0 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden transition-colors">
+     
+     <!-- VIEW: MAPPING (EQUIVALENCES) -->
+     @if(activeTab() === 'mapping') {
+         <!-- Toolbar -->
+         <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-end bg-gray-50 dark:bg-gray-900/50">
+            <div class="flex items-center gap-3">
+               @if(isLoading()) {
+                  <span class="text-xs text-gray-400"><i class="fas fa-circle-notch fa-spin mr-1"></i> Cargando configuración...</span>
+               }
+               
+               <button (click)="saveChanges()" [disabled]="isLoading() || isSaving()"
+                  class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-lg transform hover:translate-y-[-1px] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                  @if(isSaving()) {
+                     <i class="fas fa-circle-notch fa-spin"></i> Guardando...
+                  } @else {
+                     <i class="fas fa-save"></i> Guardar Cambios
+                  }
+               </button>
+            </div>
+         </div>
+
+         <!-- Table Header -->
+         <div class="p-4 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 grid grid-cols-12 gap-4 text-xs font-bold text-gray-500 uppercase tracking-wider">
+            <div class="col-span-5 pl-4">Tipo Documento Dalton (Origen)</div>
+            <div class="col-span-2 text-center"><i class="fas fa-arrow-right"></i></div>
+            <div class="col-span-5">Tipo Documento Planta (Destino)</div>
+         </div>
+
+         <div class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-900/30">
+            @for(row of viewModel(); track row.dalton.code) {
+               <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 shadow-sm flex items-center grid grid-cols-12 gap-4 group hover:shadow-md transition-all">
+                  
+                  <!-- Left: Dalton -->
+                  <div class="col-span-5 flex items-center gap-3">
+                     <div class="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center font-mono font-bold text-lg text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
+                        {{ row.dalton.code }}
+                     </div>
+                     <div class="min-w-0">
+                        <div class="font-bold text-gray-800 dark:text-gray-200 text-sm">{{ row.dalton.description }}</div>
+                        <div class="text-[10px] text-gray-400">Código Interno DMS</div>
+                     </div>
+                  </div>
+
+                  <!-- Center: Arrow -->
+                  <div class="col-span-2 flex justify-center text-gray-300 group-hover:text-indigo-400 transition-colors">
+                     <i class="fas fa-long-arrow-alt-right text-xl"></i>
+                  </div>
+
+                  <!-- Right: Plant Selector -->
+                  <div class="col-span-5">
+                     <div class="relative">
+                        <!-- Badge preview if selected -->
+                        @if(row.assignedPlantCode) {
+                           <div class="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                              <span class="text-[10px] px-2 py-0.5 rounded border font-bold"
+                                 [ngClass]="getPlantBadgeColor(row.assignedPlantCode)">
+                                 {{ row.assignedPlantCode }}
+                              </span>
+                           </div>
+                        }
+
+                        <select [ngModel]="row.assignedPlantCode" (ngModelChange)="updateMapping(row.dalton.code, $event)"
+                           class="w-full h-11 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-bold text-gray-700 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer transition-all pl-3"
+                           [class.pl-16]="row.assignedPlantCode">
+                           <option value="">-- Sin Vincular --</option>
+                           @for(plant of plantTypes(); track plant.code) {
+                              <option [value]="plant.code">
+                                 {{ plant.code }} - {{ plant.description }}
+                              </option>
+                           }
+                        </select>
+                     </div>
+                  </div>
+               </div>
+            }
+
+            @if(viewModel().length === 0 && !isLoading()) {
+               <div class="flex flex-col items-center justify-center h-64 text-gray-400">
+                  <i class="fas fa-file-contract text-4xl mb-3 opacity-30"></i>
+                  <p class="text-sm">No se encontraron tipos de documento para esta agencia.</p>
+                  <p class="text-xs mt-1">Usa la pestaña "Catálogo Dalton" para crear uno nuevo.</p>
+               </div>
+            }
+         </div>
+     }
+
+     <!-- VIEW: DALTON CATALOG -->
+     @if(activeTab() === 'dalton') {
+         <div class="flex h-full">
+            <!-- List -->
+            <div class="w-7/12 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+               <div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                  <h3 class="text-xs font-bold text-gray-500 uppercase">Folios Registrados (DMS)</h3>
+               </div>
+               <div class="flex-1 overflow-y-auto p-4 space-y-2">
+                  @for(type of daltonTypes(); track type.code) {
+                     <div class="flex items-center gap-3 p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                        <div class="w-10 h-10 rounded bg-gray-100 dark:bg-gray-700 flex items-center justify-center font-mono font-bold text-blue-600 dark:text-blue-400">
+                           {{ type.code }}
+                        </div>
+                        <div>
+                           <div class="text-sm font-bold text-gray-800 dark:text-gray-200">{{ type.description }}</div>
+                           <div class="text-[10px] text-gray-400">Agencia: {{ type.dealerCode }}</div>
+                        </div>
+                     </div>
+                  }
+               </div>
+            </div>
+            
+            <!-- Create Form -->
+            <div class="w-5/12 p-6 bg-gray-50 dark:bg-gray-900/20">
+               <div class="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                  <h3 class="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
+                     <i class="fas fa-plus-circle text-blue-500"></i> Nuevo Folio Dalton
+                  </h3>
+                  <div class="space-y-4">
+                     <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Código (Max 3 chars)</label>
+                        <input type="text" [ngModel]="newDaltonCode()" (ngModelChange)="newDaltonCode.set($event)" maxlength="5"
+                           class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg font-mono text-sm uppercase outline-none focus:ring-2 focus:ring-blue-500 dark:text-white" placeholder="Ej. PRE">
+                     </div>
+                     <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Descripción</label>
+                        <input type="text" [ngModel]="newDaltonDesc()" (ngModelChange)="newDaltonDesc.set($event)"
+                           class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:text-white" placeholder="Ej. Preventivo Express">
+                     </div>
+                     <button (click)="createDaltonType()" [disabled]="isSaving()"
+                        class="w-full py-2 bg-blue-600 text-white rounded-lg font-bold shadow hover:bg-blue-700 transition-colors disabled:opacity-50">
+                        Crear Folio
+                     </button>
+                  </div>
+               </div>
+            </div>
+         </div>
+     }
+
+     <!-- VIEW: PLANT CATALOG -->
+     @if(activeTab() === 'plant') {
+         <div class="flex h-full">
+            <!-- List -->
+            <div class="w-7/12 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+               <div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                  <h3 class="text-xs font-bold text-gray-500 uppercase">Tipos Oficiales (Planta BYD)</h3>
+               </div>
+               <div class="flex-1 overflow-y-auto p-4 space-y-2">
+                  @for(type of plantTypes(); track type.code) {
+                     <div class="flex items-center gap-3 p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                        <div class="w-10 h-10 rounded bg-green-50 dark:bg-green-900/20 flex items-center justify-center font-mono font-bold text-green-600 dark:text-green-400">
+                           {{ type.code }}
+                        </div>
+                        <div>
+                           <div class="text-sm font-bold text-gray-800 dark:text-gray-200">{{ type.description }}</div>
+                        </div>
+                     </div>
+                  }
+               </div>
+            </div>
+            
+            <!-- Create Form -->
+            <div class="w-5/12 p-6 bg-gray-50 dark:bg-gray-900/20">
+               <div class="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                  <h3 class="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
+                     <i class="fas fa-plus-circle text-green-500"></i> Nuevo Tipo Planta
+                  </h3>
+                  <div class="space-y-4">
+                     <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Código Planta</label>
+                        <input type="text" [ngModel]="newPlantCode()" (ngModelChange)="newPlantCode.set($event)" maxlength="5"
+                           class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg font-mono text-sm uppercase outline-none focus:ring-2 focus:ring-green-500 dark:text-white" placeholder="Ej. EXT">
+                     </div>
+                     <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Descripción</label>
+                        <input type="text" [ngModel]="newPlantDesc()" (ngModelChange)="newPlantDesc.set($event)"
+                           class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-green-500 dark:text-white" placeholder="Ej. Garantía Extendida">
+                     </div>
+                     <button (click)="createPlantType()" [disabled]="isSaving()"
+                        class="w-full py-2 bg-green-600 text-white rounded-lg font-bold shadow hover:bg-green-700 transition-colors disabled:opacity-50">
+                        Crear Tipo
+                     </button>
+                  </div>
+               </div>
+            </div>
+         </div>
+     }
+
+  </div>
+</div>
