@@ -101,33 +101,62 @@ export const API_REGISTRY: Partial<EndpointConfiguration>[] = [
     description: 'Consulta historial de transmisiones.',
     jsonStructure: '{}'
   },
-  // NUEVOS ENDPOINTS PARA MAPEO DE TIPOS DE ORDEN
+  // NUEVOS ENDPOINTS PARA LA MATRIZ DE JERARQUIA (Nivel 1, 2, 3 y Reglas)
   {
-    name: 'Tipos Dalton',
-    resource: '/order-types/dalton',
+    name: 'BYD Order Types',
+    resource: '/catalogs/byd-order-types',
     method: 'GET',
-    description: 'Obtiene los tipos de documento activos en el DMS por agencia.',
+    description: 'Nivel 1: Tipos de Orden Principales (Repair, Claim).',
     jsonStructure: '{}'
   },
   {
-    name: 'Tipos Planta',
-    resource: '/order-types/plant',
+    name: 'BYD Repair Types',
+    resource: '/catalogs/byd-repair-types',
     method: 'GET',
-    description: 'Obtiene el catálogo oficial de tipos de orden de Planta (BYD).',
+    description: 'Nivel 2: Subtipos de Reparación (CGBY, YBWXW).',
     jsonStructure: '{}'
   },
   {
-    name: 'Guardar Mapeo Tipos',
-    resource: '/order-types/mapping',
+    name: 'BYD Service Details',
+    resource: '/catalogs/byd-service-details',
+    method: 'GET',
+    description: 'Nivel 3: Detalle de Servicios y Labour Codes.',
+    jsonStructure: '{}'
+  },
+  // CATÁLOGOS DALTON (Nivel 4 Inputs)
+  {
+    name: 'Dalton Folios',
+    resource: '/catalogs/dalton-folios',
+    method: 'GET',
+    description: 'Catálogo de Prefijos de Orden (OR, P, G).',
+    jsonStructure: '{}'
+  },
+  {
+    name: 'Dalton Concepts',
+    resource: '/catalogs/dalton-concepts',
+    method: 'GET',
+    description: 'Catálogo de Conceptos Internos (Kilometrado, Hojalatería).',
+    jsonStructure: '{}'
+  },
+  {
+    name: 'Equivalence Rules',
+    resource: '/mappings/equivalence-rules',
+    method: 'GET',
+    description: 'Nivel 4: Matriz final de equivalencias Dalton -> BYD.',
+    jsonStructure: '{}'
+  },
+  {
+    name: 'Crear Regla Equivalencia',
+    resource: '/mappings/equivalence-rules',
     method: 'POST',
-    description: 'Guarda la configuración de equivalencias entre Dalton y Planta.',
-    jsonStructure: '{\n  "dealerCode": "...",\n  "mappings": [\n    { "daltonCode": "P", "plantCode": "OR" }\n  ]\n}'
+    description: 'Guarda una nueva regla de mapeo.',
+    jsonStructure: '{}'
   },
   {
-    name: 'Obtener Mapeo Tipos',
-    resource: '/order-types/mapping',
-    method: 'GET',
-    description: 'Recupera la configuración actual de equivalencias.',
+    name: 'Eliminar Regla Equivalencia',
+    resource: '/mappings/equivalence-rules',
+    method: 'DELETE',
+    description: 'Elimina una regla de mapeo.',
     jsonStructure: '{}'
   }
 ];

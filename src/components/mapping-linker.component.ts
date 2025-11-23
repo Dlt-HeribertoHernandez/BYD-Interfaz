@@ -2,7 +2,7 @@
 import { Component, signal, inject, computed, effect, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } from '@angular/forms';
-import { StoreService } from '../services/store.service';
+import { StoreService } from '../services/store.service.ts';
 import { GeminiService } from '../services/gemini.service';
 import { NotificationService } from '../services/notification.service';
 import { MappingItem } from '../models/app.types';
@@ -36,6 +36,8 @@ export class MappingLinkerComponent {
 
   // Estado UI local (Mutable)
   selectedItemId = signal<string | null>(null);
+  selectedIds = signal<Set<string>>(new Set()); // Para selección múltiple (Bulk)
+  
   isEditing = signal(false);
   activeInspectorTab = signal<'detail' | 'history'>('detail');
   
@@ -119,6 +121,13 @@ export class MappingLinkerComponent {
     return data;
   });
 
+  // 3.1 Estado de "Seleccionar Todos"
+  isAllSelected = computed(() => {
+    const visible = this.filteredGridData();
+    if (visible.length === 0) return false;
+    return visible.every(item => this.selectedIds().has(item.id));
+  });
+
   // 4. Detección de Calidad de Datos (Auditoría)
   dataQualityIssues = computed(() => {
     const item = this.mappings().find(m => m.id === this.selectedItemId());
@@ -151,6 +160,8 @@ export class MappingLinkerComponent {
   // --- ACCIONES DE SELECCIÓN ---
 
   selectItem(item: MappingItem) {
+    // Si hago clic en la fila, solo la selecciono para edición (Inspector)
+    // No afecta la selección múltiple (checkboxes)
     if (this.selectedItemId() === item.id) {
       this.resetSelection();
     } else {
@@ -171,6 +182,65 @@ export class MappingLinkerComponent {
       });
     }
   }
+
+  // --- SELECCIÓN MÚLTIPLE (BULK) ---
+
+  toggleSelection(id: string, event: Event) {
+    event.stopPropagation(); // Evitar que se abra el inspector
+    const current = new Set(this.selectedIds());
+    if (current.has(id)) current.delete(id);
+    else current.add(id);
+    this.selectedIds.set(current);
+  }
+
+  toggleSelectAll(event: Event) {
+    const checked = (event.target as HTMLInputElement).checked;
+    const visible = this.filteredGridData();
+    
+    if (checked) {
+      const newSet = new Set(this.selectedIds());
+      visible.forEach(i => newSet.add(i.id));
+      this.selectedIds.set(newSet);
+    } else {
+      const newSet = new Set(this.selectedIds());
+      visible.forEach(i => newSet.delete(i.id));
+      this.selectedIds.set(newSet);
+    }
+  }
+
+  clearBulkSelection() {
+    this.selectedIds.set(new Set());
+  }
+
+  // --- ACCIONES MASIVAS ---
+
+  bulkDelete() {
+    const ids = Array.from(this.selectedIds());
+    if (ids.length === 0) return;
+
+    if (confirm(`¿Estás seguro de eliminar ${ids.length} registros seleccionados? Esta acción es irreversible.`)) {
+      this.store.removeBatchMappings(ids);
+      
+      // Si el ítem abierto en el inspector fue eliminado, limpiarlo
+      if (this.selectedItemId() && ids.includes(this.selectedItemId()!)) {
+        this.resetSelection();
+      }
+
+      this.selectedIds.set(new Set());
+      this.notification.show(`${ids.length} registros eliminados correctamente.`, 'info');
+    }
+  }
+
+  bulkUpdateCategory(category: string) {
+    const ids = Array.from(this.selectedIds());
+    if (ids.length === 0 || !category) return;
+
+    this.store.updateBatchCategory(ids, category);
+    this.selectedIds.set(new Set());
+    this.notification.show(`Categoría actualizada a "${category}" para ${ids.length} registros.`, 'success');
+  }
+
+  // --- GESTIÓN INDIVIDUAL ---
 
   createNew() {
     this.resetSelection();
@@ -247,9 +317,6 @@ export class MappingLinkerComponent {
   // --- FUNCIONES AI ---
 
   async runAiNormalization() {
-    // La comprobación de disponibilidad está ahora encapsulada en el servicio,
-    // pero el método retornará vacío si falla.
-    
     const items = this.mappings().slice(0, 20); // Límite demo
     if (items.length === 0) return;
 
@@ -258,7 +325,7 @@ export class MappingLinkerComponent {
       const enriched = await this.gemini.enrichCatalogBatch(items);
       
       if (enriched.length === 0) {
-         // Si retorna vacío, el servicio ya mostró la notificación de error (API Key faltante, etc.)
+         // Si retorna vacío, el servicio ya mostró la notificación de error
          this.isAnalyzing.set(false);
          return;
       }

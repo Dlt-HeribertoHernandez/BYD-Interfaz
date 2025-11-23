@@ -141,4 +141,23 @@ export class StoreService {
       this.mappingsSignal.update(current => current.filter(i => i.id !== id));
     });
   }
+
+  /**
+   * Elimina un lote de mappings por sus IDs.
+   * Utiliza Optimistic UI (actualiza estado inmediatamente).
+   */
+  removeBatchMappings(ids: string[]) {
+    this.mappingsSignal.update(current => current.filter(i => !ids.includes(i.id)));
+    // TODO: En un escenario real, llamar a un endpoint batch delete como this.api.deleteBatchMappings(ids)
+  }
+
+  /**
+   * Actualiza la categoría principal para un lote de mappings.
+   */
+  updateBatchCategory(ids: string[], category: string) {
+    this.mappingsSignal.update(current => 
+      current.map(i => ids.includes(i.id) ? { ...i, mainCategory: category } : i)
+    );
+    // TODO: Llamar a endpoint batch update
+  }
 }

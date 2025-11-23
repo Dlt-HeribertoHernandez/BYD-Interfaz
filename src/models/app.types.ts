@@ -56,31 +56,74 @@ export interface OrderTypeConfig {
   };
 }
 
-/**
- * NUEVO: Tipo de Documento en Dalton (DMS)
- */
-export interface DaltonDocType {
-  code: string;       // Ej: 'P', 'G', 'I'
-  description: string;// Ej: 'Preventivo', 'Garantía', 'Interno'
-  dealerCode: string;
+// --- NUEVA JERARQUÍA BYD (REFACTOR 2024-11-20) ---
+
+/** Nivel 1: BYD Order Type (Ej. Repair, Claim) */
+export interface BydOrderType {
+  id: string;
+  code: string; // '22021001'
+  name: string; // 'Repair'
 }
 
-/**
- * NUEVO: Tipo de Documento en Planta (BYD)
- */
-export interface PlantDocType {
-  code: string;       // Ej: 'OR', 'WAR', 'PDI'
-  description: string;// Ej: 'Other Repair', 'Warranty Claim'
+/** Nivel 2: BYD Repair Type (Ej. CGBY - Regular Paid, YBWXW - Warranty) */
+export interface BydRepairType {
+  id: string;
+  orderTypeId: string; // FK to BydOrderType
+  code: string; // 'CGBY'
+  name: string; // 'Paid Repair'
 }
 
-/**
- * NUEVO: Mapeo de Equivalencia entre Dalton y Planta
- */
-export interface OrderTypeMapping {
-  daltonCode: string; // PK
-  plantCode: string;  // FK to PlantDocType
-  dealerCode: string;
+/** Nivel 3: Service Detail / Labor Code (Ej. Servicio 10k - WST...) */
+export interface BydServiceDetail {
+  id: string;
+  repairTypeId: string; // FK to BydRepairType
+  description: string;  // 'Servicio Mantenimiento 10,000 KM'
+  laborCode: string;    // 'WST10K...' (Código oficial de horas)
+  standardHours: number;
 }
+
+/** 
+ * Nivel 4 (Input A): Catálogo de Prefijos/Folios Dalton 
+ * Gestión CRUD por Agencia.
+ */
+export interface DaltonFolioType {
+  id: string;
+  dealerCode: string;
+  prefix: string; // Ej: "P", "OR", "XCL"
+  description: string; // Ej: "Orden de Reparación", "Preventivo"
+}
+
+/** 
+ * Nivel 4 (Input B): Catálogo de Conceptos Internos Dalton
+ * Gestión CRUD por Agencia.
+ */
+export interface DaltonServiceConcept {
+  id: string;
+  dealerCode: string;
+  internalClass: string; // Ej: "Kilometrado", "Hojalateria", "Garantia"
+  description?: string;
+}
+
+/** Nivel 4 (Output): Matriz de Equivalencia Final (Dalton -> BYD) */
+export interface EquivalenceRule {
+  id: string;
+  dealerCode: string;
+  
+  // Clave Compuesta Dalton (Input - Ahora referencian catálogos o strings validados)
+  daltonPrefix: string;    
+  internalClass: string;   
+  
+  // Relación con Jerarquía BYD (Output)
+  serviceDetailId: string; // FK to BydServiceDetail (Define implícitamente OrderType y RepairType)
+  
+  // Datos denormalizados para visualización rápida
+  _bydOrderType?: string;
+  _bydRepairType?: string;
+  _bydLaborCode?: string;
+  _description?: string;
+}
+
+// --------------------------------------------------
 
 /**
  * Regla de Negocio para la importación y transformación de datos.
