@@ -24,6 +24,14 @@ export const BASE_PATHS = {
 // 2. DEFINICIÓN DE ENDPOINTS
 // Lista maestra de recursos. Se usa para generar la configuración inicial.
 export const API_REGISTRY: Partial<EndpointConfiguration>[] = [
+  // --- AUTHENTICATION ---
+  {
+    name: 'Auth Login',
+    resource: '/auth/login',
+    method: 'POST',
+    description: 'Autenticación de usuario. Retorna Token JWT.',
+    jsonStructure: '{\n  "email": "user@dalton.com",\n  "password": "..."\n}'
+  },
   {
     name: 'Carga Catálogo BYD',
     resource: '/dynamic-insert',
@@ -157,6 +165,14 @@ export const API_REGISTRY: Partial<EndpointConfiguration>[] = [
     resource: '/mappings/equivalence-rules',
     method: 'DELETE',
     description: 'Elimina una regla de mapeo.',
+    jsonStructure: '{}'
+  },
+  // DASHBOARD
+  {
+    name: 'Dashboard Stats',
+    resource: '/dashboard/stats',
+    method: 'GET',
+    description: 'Obtiene KPIs y series de tiempo para gráficos.',
     jsonStructure: '{}'
   }
 ];

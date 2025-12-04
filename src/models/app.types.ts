@@ -5,6 +5,28 @@
  * a través de toda la aplicación.
  */
 
+// --- AUTHENTICATION ---
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: 'Admin' | 'Manager' | 'User';
+  avatarUrl?: string;
+  dealerCode?: string; // Contexto de agencia asignado
+}
+
+export interface LoginCredentials {
+  email: string;
+  password: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  user: User;
+  expiresIn?: number;
+}
+
 /**
  * Representa un ítem en el catálogo maestro de mapeo (Excel cargado).
  * Vincula un código BYD (Fábrica) con un código interno Dalton (DMS).
@@ -335,4 +357,23 @@ export interface ToastNotification {
   message: string;
   type: 'success' | 'error' | 'info' | 'warning';
   duration?: number;
+}
+
+// --- DASHBOARD ANALYTICS ---
+
+export interface DashboardStats {
+  kpis: {
+    totalTransmissions: number;
+    successRate: number; // Porcentaje
+    totalErrors: number;
+    avgResponseTime: number; // ms
+  };
+  trendSeries: TimeSeriesPoint[]; // Gráfico de línea
+  errorDistribution: { label: string; count: number }[]; // Donut chart
+}
+
+export interface TimeSeriesPoint {
+  date: string; // YYYY-MM-DD
+  success: number;
+  error: number;
 }

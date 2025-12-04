@@ -3,7 +3,7 @@ import { Injectable, signal, inject, effect } from '@angular/core';
 import { HttpClient, HttpParams, HttpHeaders } from '@angular/common/http';
 import { delay, of, Observable } from 'rxjs';
 import { catchError, map, tap } from 'rxjs/operators';
-import { MappingItem, ServiceOrder, Dealer, EndpointConfiguration, IntegrationLog, TransmissionPayload, ModelGroup, BydOrderType, BydRepairType, BydServiceDetail, EquivalenceRule, DaltonFolioType, DaltonServiceConcept } from '../models/app.types';
+import { MappingItem, ServiceOrder, Dealer, EndpointConfiguration, IntegrationLog, TransmissionPayload, ModelGroup, BydOrderType, BydRepairType, BydServiceDetail, EquivalenceRule, DaltonFolioType, DaltonServiceConcept, DashboardStats, TimeSeriesPoint } from '../models/app.types';
 import { EndpointConfigService } from './endpoint-config.service';
 
 /**
@@ -174,7 +174,7 @@ export class ApiService {
   // ===========================================================================
 
   getDealers(): Observable<Dealer[]> {
-    if(this.useMockData()) return of(this.mockDealers);
+    if(this.useMockData()) return of([...this.mockDealers]);
     const config = this.endpointConfig.getConfig('Dealers');
     if (!config || !config.computedUrl) return of([]);
     return this.http.get<Partial<Dealer>[]>(config.computedUrl, this.getHttpOptions(config)).pipe(
@@ -235,7 +235,7 @@ export class ApiService {
 
   getOrders(startDate: string, endDate: string, dealerCode?: string): Observable<ServiceOrder[]> {
     const targetDealer = dealerCode || this.selectedDealerCode();
-    if (this.useMockData()) return of(this.mockOrders).pipe(delay(600));
+    if (this.useMockData()) return of([...this.mockOrders]).pipe(delay(600));
     const config = this.endpointConfig.getConfig('Obtener Órdenes');
     if (!config || !config.computedUrl) return of([]);
     let params = new HttpParams().set('startDate', startDate).set('endDate', endDate).set('dealerCode', targetDealer);
@@ -412,7 +412,7 @@ export class ApiService {
 
   // --- ORDER TYPES (Nivel 1) ---
   getBydOrderTypes(): Observable<BydOrderType[]> {
-    if (this.useMockData()) return of(this.mockBydOrderTypes).pipe(delay(200));
+    if (this.useMockData()) return of([...this.mockBydOrderTypes]).pipe(delay(200));
     const config = this.endpointConfig.getConfig('BYD Order Types');
     if (!config || !config.computedUrl) return of([]);
     return this.http.get<BydOrderType[]>(config.computedUrl, this.getHttpOptions(config)).pipe(catchError(() => of([])));
@@ -420,10 +420,9 @@ export class ApiService {
 
   createBydOrderType(item: Omit<BydOrderType, 'id'>): Observable<boolean> {
     if (this.useMockData()) {
-      this.mockBydOrderTypes.push({ ...item, id: crypto.randomUUID() });
+      this.mockBydOrderTypes = [...this.mockBydOrderTypes, { ...item, id: crypto.randomUUID() }];
       return of(true).pipe(delay(300));
     }
-    // Generic "create" endpoint config pattern
     const config = this.endpointConfig.getConfig('BYD Order Types');
     if (!config || !config.computedUrl) return of(false);
     return this.http.post<boolean>(config.computedUrl, item, this.getHttpOptions(config)).pipe(catchError(() => of(false)));
@@ -441,7 +440,7 @@ export class ApiService {
 
   // --- REPAIR TYPES (Nivel 2) ---
   getBydRepairTypes(): Observable<BydRepairType[]> {
-    if (this.useMockData()) return of(this.mockBydRepairTypes).pipe(delay(300));
+    if (this.useMockData()) return of([...this.mockBydRepairTypes]).pipe(delay(300));
     const config = this.endpointConfig.getConfig('BYD Repair Types');
     if (!config || !config.computedUrl) return of([]);
     return this.http.get<BydRepairType[]>(config.computedUrl, this.getHttpOptions(config)).pipe(catchError(() => of([])));
@@ -449,7 +448,7 @@ export class ApiService {
 
   createBydRepairType(item: Omit<BydRepairType, 'id'>): Observable<boolean> {
     if (this.useMockData()) {
-      this.mockBydRepairTypes.push({ ...item, id: crypto.randomUUID() });
+      this.mockBydRepairTypes = [...this.mockBydRepairTypes, { ...item, id: crypto.randomUUID() }];
       return of(true).pipe(delay(300));
     }
     const config = this.endpointConfig.getConfig('BYD Repair Types');
@@ -469,7 +468,7 @@ export class ApiService {
 
   // --- SERVICE DETAILS (Nivel 3) ---
   getBydServiceDetails(): Observable<BydServiceDetail[]> {
-    if (this.useMockData()) return of(this.mockBydServiceDetails).pipe(delay(400));
+    if (this.useMockData()) return of([...this.mockBydServiceDetails]).pipe(delay(400));
     const config = this.endpointConfig.getConfig('BYD Service Details');
     if (!config || !config.computedUrl) return of([]);
     return this.http.get<BydServiceDetail[]>(config.computedUrl, this.getHttpOptions(config)).pipe(catchError(() => of([])));
@@ -477,7 +476,7 @@ export class ApiService {
 
   createBydServiceDetail(item: Omit<BydServiceDetail, 'id'>): Observable<boolean> {
     if (this.useMockData()) {
-      this.mockBydServiceDetails.push({ ...item, id: crypto.randomUUID() });
+      this.mockBydServiceDetails = [...this.mockBydServiceDetails, { ...item, id: crypto.randomUUID() }];
       return of(true).pipe(delay(300));
     }
     const config = this.endpointConfig.getConfig('BYD Service Details');
@@ -597,5 +596,60 @@ export class ApiService {
     const config = this.endpointConfig.getConfig('Eliminar Regla Equivalencia');
     if (!config || !config.computedUrl) return of(false);
     return this.http.delete<boolean>(`${config.computedUrl}/${id}`, this.getHttpOptions(config)).pipe(catchError(() => of(false)));
+  }
+
+  // --- DASHBOARD ANALYTICS ---
+  getDashboardStats(startDate: string, endDate: string, dealerCode?: string): Observable<DashboardStats> {
+    if (this.useMockData()) {
+      // Generador de datos aleatorios realistas
+      const days = 7;
+      const trendSeries: TimeSeriesPoint[] = [];
+      let totalSuccess = 0;
+      let totalErrors = 0;
+
+      for (let i = days; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+        
+        // Random volume
+        const dailySuccess = Math.floor(Math.random() * 20) + 5; 
+        const dailyError = Math.floor(Math.random() * 5);
+        
+        totalSuccess += dailySuccess;
+        totalErrors += dailyError;
+        
+        trendSeries.push({ date: dateStr, success: dailySuccess, error: dailyError });
+      }
+
+      const totalTransmissions = totalSuccess + totalErrors;
+      const successRate = totalTransmissions > 0 ? Math.round((totalSuccess / totalTransmissions) * 100) : 0;
+
+      const mockStats: DashboardStats = {
+        kpis: {
+          totalTransmissions,
+          successRate,
+          totalErrors,
+          avgResponseTime: Math.floor(Math.random() * 500) + 200 // 200-700ms
+        },
+        trendSeries,
+        errorDistribution: [
+          { label: 'VIN Mismatch', count: Math.floor(totalErrors * 0.4) },
+          { label: 'Network Timeout', count: Math.floor(totalErrors * 0.2) },
+          { label: 'Invalid Schema', count: Math.floor(totalErrors * 0.3) },
+          { label: 'Auth Error', count: totalErrors - Math.floor(totalErrors * 0.9) }
+        ]
+      };
+      
+      return of(mockStats).pipe(delay(800));
+    }
+
+    const config = this.endpointConfig.getConfig('Dashboard Stats');
+    if (!config || !config.computedUrl) return of({ kpis: { totalTransmissions: 0, successRate: 0, totalErrors: 0, avgResponseTime: 0 }, trendSeries: [], errorDistribution: [] });
+    
+    let params = new HttpParams().set('startDate', startDate).set('endDate', endDate);
+    if(dealerCode) params = params.set('dealerCode', dealerCode);
+
+    return this.http.get<DashboardStats>(config.computedUrl, { ...this.getHttpOptions(config), params }).pipe(catchError(() => of({ kpis: { totalTransmissions: 0, successRate: 0, totalErrors: 0, avgResponseTime: 0 }, trendSeries: [], errorDistribution: [] })));
   }
 }

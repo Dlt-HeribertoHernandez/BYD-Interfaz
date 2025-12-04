@@ -6,6 +6,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from './services/api.service';
 import { NotificationService } from './services/notification.service';
 import { ThemeService } from './services/theme.service';
+import { AuthService } from './services/auth.service';
 import { Dealer } from './models/app.types';
 
 @Component({
@@ -18,6 +19,7 @@ export class AppComponent {
   apiService = inject(ApiService);
   notificationService = inject(NotificationService);
   themeService = inject(ThemeService);
+  authService = inject(AuthService); // Injected to access isAuthenticated signal
 
   dealers = signal<Dealer[]>([]);
   isContextSwitching = signal(false); // UI State for the loading overlay
@@ -27,7 +29,11 @@ export class AppComponent {
     // Effect to reload dealers when mode changes (Demo <-> Live)
     effect(() => {
       this.apiService.useMockData(); // Trigger dependency
-      this.loadDealers();
+      
+      // Only load dealers if authenticated
+      if (this.authService.isAuthenticated()) {
+        this.loadDealers();
+      }
     });
   }
 

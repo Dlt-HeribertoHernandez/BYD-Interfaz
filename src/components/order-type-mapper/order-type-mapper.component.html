@@ -2,7 +2,7 @@
 <div class="flex flex-col h-full gap-6 animate-fade-in pb-16 relative">
   
   <!-- Header -->
-  <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex justify-between items-center transition-colors">
+  <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex justify-between items-center transition-colors shrink-0">
     <div>
       <h2 class="text-xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
          <i class="fas fa-project-diagram text-indigo-600 dark:text-indigo-400"></i> Gestor Integral de Equivalencias
@@ -26,24 +26,24 @@
      
      <!-- PANEL 1: BYD ORDER TYPE -->
      <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden shadow-sm">
-        <div class="p-3 border-b border-gray-200 dark:border-gray-700 bg-indigo-50 dark:bg-indigo-900/20 flex justify-between items-center">
+        <div class="p-3 border-b border-gray-200 dark:border-gray-700 bg-indigo-50 dark:bg-indigo-900/20 flex justify-between items-center shrink-0">
            <h3 class="text-xs font-bold text-indigo-800 dark:text-indigo-300 uppercase tracking-wider">1. Order Type (BYD)</h3>
            <button (click)="startCreateOrderType()" class="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 text-xs" title="Agregar Nuevo"><i class="fas fa-plus-circle"></i></button>
         </div>
         
         <!-- Search Bar P1 -->
-        <div class="p-2 border-b border-gray-100 dark:border-gray-700">
+        <div class="p-2 border-b border-gray-100 dark:border-gray-700 shrink-0">
            <div class="relative">
               <i class="fas fa-search absolute left-2 top-2 text-gray-300 text-xs"></i>
-              <input [(ngModel)]="searchOt" placeholder="Buscar Order Type..." class="w-full pl-7 p-1.5 text-xs bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded outline-none focus:border-indigo-400 dark:text-white">
+              <input [(ngModel)]="searchOt" placeholder="Buscar Order Type..." class="w-full pl-7 p-1.5 text-xs bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded outline-none focus:border-indigo-400 dark:text-white text-gray-700">
            </div>
         </div>
 
         <!-- Creator -->
         @if(isCreatingOrderType()) {
-           <div class="p-3 bg-indigo-50/50 dark:bg-indigo-900/10 border-b border-indigo-100 dark:border-indigo-800 animate-slide-up">
-              <input [(ngModel)]="newOt().code" placeholder="Código (ej. 22021001)" class="w-full mb-2 p-1 text-xs border rounded dark:bg-gray-700 dark:text-white">
-              <input [(ngModel)]="newOt().name" placeholder="Nombre (ej. Repair)" class="w-full mb-2 p-1 text-xs border rounded dark:bg-gray-700 dark:text-white">
+           <div class="p-3 bg-indigo-50/50 dark:bg-indigo-900/10 border-b border-indigo-100 dark:border-indigo-800 animate-slide-up shrink-0">
+              <input [(ngModel)]="newOt().code" placeholder="Código (ej. 22021001)" class="w-full mb-2 p-2 text-xs bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white outline-none focus:ring-1 focus:ring-indigo-500">
+              <input [(ngModel)]="newOt().name" placeholder="Nombre (ej. Repair)" class="w-full mb-2 p-2 text-xs bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white outline-none focus:ring-1 focus:ring-indigo-500">
               <div class="flex justify-end gap-2">
                  <button (click)="isCreatingOrderType.set(false)" class="text-xs text-gray-400">Cancelar</button>
                  <button (click)="saveOrderType()" class="text-xs bg-indigo-600 text-white px-2 py-1 rounded">Guardar</button>
@@ -77,24 +77,24 @@
      <!-- PANEL 2: BYD REPAIR TYPE -->
      <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden shadow-sm transition-all"
           [class.opacity-50]="!selectedOrderType()" [class.pointer-events-none]="!selectedOrderType()">
-        <div class="p-3 border-b border-gray-200 dark:border-gray-700 bg-blue-50 dark:bg-blue-900/20 flex justify-between items-center">
+        <div class="p-3 border-b border-gray-200 dark:border-gray-700 bg-blue-50 dark:bg-blue-900/20 flex justify-between items-center shrink-0">
            <h3 class="text-xs font-bold text-blue-800 dark:text-blue-300 uppercase tracking-wider">2. Repair Type</h3>
            <button (click)="startCreateRepairType()" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 text-xs" title="Agregar Nuevo"><i class="fas fa-plus-circle"></i></button>
         </div>
 
         <!-- Search Bar P2 -->
-        <div class="p-2 border-b border-gray-100 dark:border-gray-700">
+        <div class="p-2 border-b border-gray-100 dark:border-gray-700 shrink-0">
            <div class="relative">
               <i class="fas fa-search absolute left-2 top-2 text-gray-300 text-xs"></i>
-              <input [(ngModel)]="searchRt" placeholder="Filtrar Repair Types..." class="w-full pl-7 p-1.5 text-xs bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded outline-none focus:border-blue-400 dark:text-white">
+              <input [(ngModel)]="searchRt" placeholder="Filtrar Repair Types..." class="w-full pl-7 p-1.5 text-xs bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded outline-none focus:border-blue-400 dark:text-white text-gray-700">
            </div>
         </div>
 
         <!-- Creator -->
         @if(isCreatingRepairType()) {
-           <div class="p-3 bg-blue-50/50 dark:bg-blue-900/10 border-b border-blue-100 dark:border-blue-800 animate-slide-up">
-              <input [(ngModel)]="newRt().code" placeholder="Código (ej. CGBY)" class="w-full mb-2 p-1 text-xs border rounded dark:bg-gray-700 dark:text-white">
-              <input [(ngModel)]="newRt().name" placeholder="Nombre (ej. Paid Repair)" class="w-full mb-2 p-1 text-xs border rounded dark:bg-gray-700 dark:text-white">
+           <div class="p-3 bg-blue-50/50 dark:bg-blue-900/10 border-b border-blue-100 dark:border-blue-800 animate-slide-up shrink-0">
+              <input [(ngModel)]="newRt().code" placeholder="Código (ej. CGBY)" class="w-full mb-2 p-2 text-xs bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white outline-none focus:ring-1 focus:ring-blue-500">
+              <input [(ngModel)]="newRt().name" placeholder="Nombre (ej. Paid Repair)" class="w-full mb-2 p-2 text-xs bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white outline-none focus:ring-1 focus:ring-blue-500">
               <div class="flex justify-end gap-2">
                  <button (click)="isCreatingRepairType.set(false)" class="text-xs text-gray-400">Cancelar</button>
                  <button (click)="saveRepairType()" class="text-xs bg-blue-600 text-white px-2 py-1 rounded">Guardar</button>
@@ -133,26 +133,26 @@
      <!-- PANEL 3: SERVICE DETAILS (LABOR) -->
      <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden shadow-sm transition-all"
           [class.opacity-50]="!selectedRepairType()" [class.pointer-events-none]="!selectedRepairType()">
-        <div class="p-3 border-b border-gray-200 dark:border-gray-700 bg-purple-50 dark:bg-purple-900/20 flex justify-between items-center">
+        <div class="p-3 border-b border-gray-200 dark:border-gray-700 bg-purple-50 dark:bg-purple-900/20 flex justify-between items-center shrink-0">
            <h3 class="text-xs font-bold text-purple-800 dark:text-purple-300 uppercase tracking-wider">3. Labor / Detalle</h3>
            <button (click)="startCreateServiceDetail()" class="text-purple-600 hover:text-purple-800 dark:text-purple-400 text-xs" title="Agregar Nuevo"><i class="fas fa-plus-circle"></i></button>
         </div>
 
         <!-- Search Bar P3 -->
-        <div class="p-2 border-b border-gray-100 dark:border-gray-700">
+        <div class="p-2 border-b border-gray-100 dark:border-gray-700 shrink-0">
            <div class="relative">
               <i class="fas fa-search absolute left-2 top-2 text-gray-300 text-xs"></i>
-              <input [(ngModel)]="searchSd" placeholder="Buscar Labor Code..." class="w-full pl-7 p-1.5 text-xs bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded outline-none focus:border-purple-400 dark:text-white">
+              <input [(ngModel)]="searchSd" placeholder="Buscar Labor Code..." class="w-full pl-7 p-1.5 text-xs bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded outline-none focus:border-purple-400 dark:text-white text-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-700">
            </div>
         </div>
 
         <!-- Creator -->
         @if(isCreatingServiceDetail()) {
-           <div class="p-3 bg-purple-50/50 dark:bg-purple-900/10 border-b border-purple-100 dark:border-purple-800 animate-slide-up">
-              <input [(ngModel)]="newSd().description" placeholder="Descripción (ej. Servicio 10k)" class="w-full mb-2 p-1 text-xs border rounded dark:bg-gray-700 dark:text-white">
+           <div class="p-3 bg-purple-50/50 dark:bg-purple-900/10 border-b border-purple-100 dark:border-purple-800 animate-slide-up shrink-0">
+              <input [(ngModel)]="newSd().description" placeholder="Descripción (ej. Servicio 10k)" class="w-full mb-2 p-2 text-xs bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white outline-none focus:ring-1 focus:ring-purple-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
               <div class="flex gap-2 mb-2">
-                 <input [(ngModel)]="newSd().laborCode" placeholder="Labor Code (WST...)" class="flex-1 p-1 text-xs border rounded dark:bg-gray-700 dark:text-white">
-                 <input type="number" [(ngModel)]="newSd().standardHours" placeholder="Hrs" class="w-16 p-1 text-xs border rounded dark:bg-gray-700 dark:text-white">
+                 <input [(ngModel)]="newSd().laborCode" placeholder="Labor Code (WST...)" class="flex-1 p-2 text-xs bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white outline-none focus:ring-1 focus:ring-purple-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                 <input type="number" [(ngModel)]="newSd().standardHours" placeholder="Hrs" class="w-16 p-2 text-xs bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white outline-none focus:ring-1 focus:ring-purple-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
               </div>
               <div class="flex justify-end gap-2">
                  <button (click)="isCreatingServiceDetail.set(false)" class="text-xs text-gray-400">Cancelar</button>
@@ -206,14 +206,14 @@
 
      <!-- PANEL 4: INTEGRAL DALTON MANAGER -->
      <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden shadow-md">
-        <div class="p-3 border-b border-gray-200 dark:border-gray-700 bg-gray-900 text-white flex justify-between items-center">
+        <div class="p-3 border-b border-gray-200 dark:border-gray-700 bg-gray-900 text-white flex justify-between items-center shrink-0">
            <h3 class="text-xs font-bold uppercase tracking-wider"><i class="fas fa-network-wired mr-1"></i> Integración Dalton</h3>
         </div>
 
-        <div class="flex-1 overflow-y-auto flex flex-col">
+        <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
            
            <!-- SECTION A: DEFINITION & SELECTION -->
-           <div class="p-4 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 space-y-4">
+           <div class="shrink-0 p-4 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 space-y-4 overflow-y-auto max-h-[50%]">
                
                <!-- Folios Manager -->
                <div>
@@ -227,15 +227,15 @@
                   @if(isCreatingFolio()) {
                      <div class="bg-white dark:bg-gray-800 p-2 rounded border border-green-200 mb-2 animate-fade-in">
                         <div class="flex gap-2 mb-2">
-                           <input [(ngModel)]="newFolio().prefix" placeholder="Prefijo (ej. OR)" class="w-16 p-1 text-xs border rounded uppercase dark:bg-gray-700 dark:text-white">
-                           <input [(ngModel)]="newFolio().description" placeholder="Desc. (ej. Reparación)" class="flex-1 p-1 text-xs border rounded dark:bg-gray-700 dark:text-white">
+                           <input [(ngModel)]="newFolio().prefix" placeholder="Prefijo (ej. OR)" class="w-16 p-2 text-xs bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded uppercase text-gray-900 dark:text-white outline-none focus:ring-1 focus:ring-green-500">
+                           <input [(ngModel)]="newFolio().description" placeholder="Desc. (ej. Reparación)" class="flex-1 p-2 text-xs bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white outline-none focus:ring-1 focus:ring-green-500">
                         </div>
                         <button (click)="saveDaltonFolio()" class="w-full text-xs bg-green-600 text-white py-1 rounded">Guardar Prefijo</button>
                      </div>
                   }
 
                   <select [ngModel]="selectedDaltonFolio()" (ngModelChange)="selectedDaltonFolio.set($event)"
-                     class="w-full p-2 bg-white dark:bg-gray-700 border rounded text-xs font-bold outline-none focus:border-green-500 dark:text-white dark:border-gray-600">
+                     class="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-xs font-bold text-gray-900 dark:text-white outline-none focus:border-green-500">
                      <option [ngValue]="null">-- Seleccionar Folio --</option>
                      @for(f of daltonFolios(); track f.id) {
                         <option [ngValue]="f">{{ f.prefix }} - {{ f.description }}</option>
@@ -254,14 +254,14 @@
 
                   @if(isCreatingConcept()) {
                      <div class="bg-white dark:bg-gray-800 p-2 rounded border border-green-200 mb-2 animate-fade-in">
-                        <input [(ngModel)]="newConcept().internalClass" placeholder="Clase (ej. Kilometrado)" class="w-full mb-2 p-1 text-xs border rounded dark:bg-gray-700 dark:text-white">
-                        <input [(ngModel)]="newConcept().description" placeholder="Descripción Opcional" class="w-full mb-2 p-1 text-xs border rounded dark:bg-gray-700 dark:text-white">
+                        <input [(ngModel)]="newConcept().internalClass" placeholder="Clase (ej. Kilometrado)" class="w-full mb-2 p-2 text-xs bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white outline-none focus:ring-1 focus:ring-green-500">
+                        <input [(ngModel)]="newConcept().description" placeholder="Descripción Opcional" class="w-full mb-2 p-2 text-xs bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white outline-none focus:ring-1 focus:ring-green-500">
                         <button (click)="saveDaltonConcept()" class="w-full text-xs bg-green-600 text-white py-1 rounded">Guardar Concepto</button>
                      </div>
                   }
 
                   <select [ngModel]="selectedDaltonConcept()" (ngModelChange)="selectedDaltonConcept.set($event)"
-                     class="w-full p-2 bg-white dark:bg-gray-700 border rounded text-xs font-bold outline-none focus:border-green-500 dark:text-white dark:border-gray-600">
+                     class="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-xs font-bold text-gray-900 dark:text-white outline-none focus:border-green-500">
                      <option [ngValue]="null">-- Seleccionar Clasificación --</option>
                      @for(c of daltonConcepts(); track c.id) {
                         <option [ngValue]="c">{{ c.internalClass }}</option>
@@ -270,32 +270,37 @@
                </div>
            </div>
 
-           <!-- SECTION B: EXISTING LINKS -->
-           <div class="flex-1 bg-white dark:bg-gray-800 p-0 overflow-y-auto">
-               <div class="p-2 bg-gray-100 dark:bg-gray-800 text-[10px] font-bold text-gray-500 uppercase sticky top-0 border-b dark:border-gray-700 z-10">
+           <!-- SECTION B: EXISTING LINKS (Flex-1 for Rules List) -->
+           <div class="flex-1 flex flex-col min-h-0 bg-white dark:bg-gray-800">
+               <!-- Fixed Header -->
+               <div class="shrink-0 p-2 bg-gray-100 dark:bg-gray-800 text-[10px] font-bold text-gray-500 uppercase sticky top-0 border-b border-gray-200 dark:border-gray-700 z-10 shadow-sm">
                   Reglas Activas ({{ existingRules().length }})
                </div>
-               @for(rule of existingRules(); track rule.id) {
-                  <div class="p-3 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 group relative">
-                     <div class="flex items-center gap-2 mb-1">
-                        <span class="text-[10px] font-mono bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300 px-1.5 rounded border dark:border-gray-500">{{ rule.daltonPrefix }}</span>
-                        <i class="fas fa-arrow-right text-[10px] text-gray-300"></i>
-                        <span class="text-xs font-bold text-gray-800 dark:text-gray-200">{{ rule.internalClass }}</span>
+               
+               <!-- Scrollable Content -->
+               <div class="flex-1 overflow-y-auto p-0">
+                  @for(rule of existingRules(); track rule.id) {
+                     <div class="p-3 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 group relative transition-colors">
+                        <div class="flex items-center gap-2 mb-1">
+                           <span class="text-[10px] font-mono bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300 px-1.5 rounded border dark:border-gray-500">{{ rule.daltonPrefix }}</span>
+                           <i class="fas fa-arrow-right text-[10px] text-gray-300"></i>
+                           <span class="text-xs font-bold text-gray-800 dark:text-gray-200">{{ rule.internalClass }}</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-[10px] text-gray-400 pl-2 border-l-2 border-green-500 ml-1">
+                           <span class="font-mono text-purple-600 dark:text-purple-400 font-bold">{{ rule._bydLaborCode }}</span>
+                           <span class="truncate max-w-[120px]">{{ rule._description }}</span>
+                        </div>
+                        <button (click)="deleteRule(rule.id)" class="absolute top-3 right-3 text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100">
+                           <i class="fas fa-unlink"></i>
+                        </button>
                      </div>
-                     <div class="flex items-center gap-2 text-[10px] text-gray-400 pl-2 border-l-2 border-green-500 ml-1">
-                        <span class="font-mono text-purple-600 dark:text-purple-400 font-bold">{{ rule._bydLaborCode }}</span>
-                        <span class="truncate max-w-[120px]">{{ rule._description }}</span>
+                  }
+                  @if(existingRules().length === 0) {
+                     <div class="p-8 text-center text-gray-400 text-xs italic">
+                        No hay equivalencias registradas para esta agencia.
                      </div>
-                     <button (click)="deleteRule(rule.id)" class="absolute top-3 right-3 text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100">
-                        <i class="fas fa-unlink"></i>
-                     </button>
-                  </div>
-               }
-               @if(existingRules().length === 0) {
-                  <div class="p-8 text-center text-gray-400 text-xs italic">
-                     No hay equivalencias registradas para esta agencia.
-                  </div>
-               }
+                  }
+               </div>
            </div>
 
         </div>

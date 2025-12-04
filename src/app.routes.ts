@@ -7,14 +7,31 @@ import { LogMonitorComponent } from './components/log-monitor/log-monitor.compon
 import { BusinessLogicComponent } from './components/business-logic/business-logic.component';
 import { DealerManagerComponent } from './components/dealer-manager/dealer-manager.component';
 import { OrderTypeMapperComponent } from './components/order-type-mapper/order-type-mapper.component';
+import { DashboardComponent } from './components/dashboard/dashboard.component';
+import { LoginComponent } from './components/login/login.component';
+import { authGuard } from './core/auth.guard';
 
 export const routes: Routes = [
-  { path: '', redirectTo: 'mapping', pathMatch: 'full' },
-  { path: 'mapping', component: MappingLinkerComponent },
-  { path: 'orders', component: ServiceOrdersComponent },
-  { path: 'logs', component: LogMonitorComponent },
-  { path: 'config', component: EndpointConfigComponent },
-  { path: 'rules', component: BusinessLogicComponent },
-  { path: 'dealers', component: DealerManagerComponent },
-  { path: 'order-types', component: OrderTypeMapperComponent },
+  // Ruta pública
+  { path: 'login', component: LoginComponent },
+  
+  // Rutas protegidas (Requieren autenticación)
+  { 
+    path: '', 
+    canActivate: [authGuard],
+    children: [
+      { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+      { path: 'dashboard', component: DashboardComponent },
+      { path: 'mapping', component: MappingLinkerComponent },
+      { path: 'orders', component: ServiceOrdersComponent },
+      { path: 'logs', component: LogMonitorComponent },
+      { path: 'config', component: EndpointConfigComponent },
+      { path: 'rules', component: BusinessLogicComponent },
+      { path: 'dealers', component: DealerManagerComponent },
+      { path: 'order-types', component: OrderTypeMapperComponent },
+    ]
+  },
+  
+  // Wildcard redirect
+  { path: '**', redirectTo: 'login' }
 ];

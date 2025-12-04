@@ -1,0 +1,79 @@
+
+<div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 transition-colors duration-300 relative overflow-hidden">
+  
+  <!-- Background Decoration -->
+  <div class="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+     <div class="absolute -top-[10%] -right-[10%] w-[50%] h-[50%] bg-blue-500/10 rounded-full blur-3xl"></div>
+     <div class="absolute bottom-[10%] left-[10%] w-[30%] h-[30%] bg-purple-500/10 rounded-full blur-3xl"></div>
+  </div>
+
+  <!-- Login Card -->
+  <div class="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md border border-gray-200 dark:border-gray-700 relative z-10 animate-fade-in">
+    
+    <!-- Header -->
+    <div class="text-center mb-8">
+      <div class="w-16 h-16 bg-gradient-to-br from-blue-600 to-purple-600 rounded-xl flex items-center justify-center text-white font-bold text-2xl shadow-lg mx-auto mb-4">
+        BD
+      </div>
+      <h1 class="text-2xl font-bold text-gray-800 dark:text-white">Bienvenido</h1>
+      <p class="text-gray-500 dark:text-gray-400 text-sm mt-1">Inicia sesión en LinkMaster Integrator</p>
+    </div>
+
+    <!-- Form -->
+    <form [formGroup]="loginForm" (ngSubmit)="onSubmit()" class="space-y-5">
+      
+      <!-- Email -->
+      <div>
+        <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Correo Electrónico</label>
+        <div class="relative">
+           <i class="fas fa-envelope absolute left-3 top-3 text-gray-400"></i>
+           <input type="email" formControlName="email" 
+              class="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:text-white transition-all"
+              placeholder="nombre@empresa.com">
+        </div>
+      </div>
+
+      <!-- Password -->
+      <div>
+        <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Contraseña</label>
+        <div class="relative">
+           <i class="fas fa-lock absolute left-3 top-3 text-gray-400"></i>
+           <input type="password" formControlName="password" 
+              class="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:text-white transition-all"
+              placeholder="••••••••">
+        </div>
+      </div>
+
+      <!-- Error Message -->
+      @if (errorMessage()) {
+        <div class="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-xs p-3 rounded-lg flex items-center gap-2 border border-red-100 dark:border-red-800">
+           <i class="fas fa-exclamation-circle"></i> {{ errorMessage() }}
+        </div>
+      }
+
+      <!-- Submit Button -->
+      <button type="submit" [disabled]="isLoading() || loginForm.invalid"
+        class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg transition-all transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2">
+        @if (isLoading()) {
+           <i class="fas fa-circle-notch fa-spin"></i> Iniciando...
+        } @else {
+           <span>Ingresar</span> <i class="fas fa-arrow-right"></i>
+        }
+      </button>
+
+    </form>
+
+    <!-- Footer Controls -->
+    <div class="mt-8 pt-6 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center text-xs">
+       <span class="text-gray-400">Versión 1.0.2</span>
+       
+       <!-- Quick Mock Toggle for Devs -->
+       <button (click)="toggleMock()" class="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+          [class.text-green-500]="isMockMode" [class.text-gray-400]="!isMockMode" title="Modo Simulación">
+          <i class="fas" [class]="isMockMode ? 'fa-toggle-on' : 'fa-toggle-off'"></i>
+          {{ isMockMode ? 'Modo Demo' : 'Modo Live' }}
+       </button>
+    </div>
+
+  </div>
+</div>
